@@ -134,6 +134,8 @@
   .stat .lbl{font-weight:500;color:#7a5a3a}
 
   /* ===== Menu cards ===== */
+  .cat{font-size:clamp(1.8rem,4vw,2.6rem);color:var(--crousty-deep);margin:48px auto 22px;max-width:1150px;text-align:left;padding-left:6px}
+  .cat span{font-family:'Fredoka';font-size:.95rem;font-weight:400;color:#a98a68;letter-spacing:0}
   .menu-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:28px;max-width:1150px;margin:0 auto}
   .card{
     background:#fff;border-radius:26px;padding:34px 26px;text-align:center;position:relative;
@@ -272,7 +274,7 @@
     <a href="#why" onclick="closeNav()">Le concept</a>
     <a href="#visit" onclick="closeNav()">Nous trouver</a>
     <a href="#avis" onclick="closeNav()">Avis</a>
-    <button class="cta-btn" onclick="order()">Commander 🛵</button>
+    <a href="#visit" class="cta-btn" onclick="closeNav()">📍 Nous trouver</a>
   </nav>
   <button class="burger" onclick="toggleNav()" aria-label="menu"><span></span><span></span><span></span></button>
 </header>
@@ -292,8 +294,8 @@
     <h1><span class="word">FARMER</span> <span class="word">CROUSTY</span></h1>
     <p class="lead">Le vrai <b>poulet crousti</b> : mariné 24 h, pané au panko japonais et frit à la minute. Servi sur un lit de riz parfumé, nappé de sauce blanche maison et de ta sauce signature. Croustillant dehors, fondant dedans, 100% halal.</p>
     <div class="hero-actions">
-      <button class="cta-btn" onclick="order()">🛵 Je commande maintenant</button>
-      <a class="ghost-btn" href="#menu">Voir le menu 👇</a>
+      <a class="cta-btn" href="#menu">📋 Découvrir la carte</a>
+      <a class="ghost-btn" href="#visit">📍 Nous trouver</a>
     </div>
   </div>
 
@@ -324,47 +326,124 @@
 <!-- MENU -->
 <section class="block" id="menu" style="text-align:center">
   <p class="eyebrow reveal">🍽️ Notre carte</p>
-  <h2 class="section-title reveal">Compose ton crousti</h2>
+  <h2 class="section-title reveal">La carte Farmer Crousty</h2>
+  <p class="reveal d1" style="color:#7a5a3a;max-width:560px;margin:0 auto 1rem">Tout est fait maison, frais et 100% halal. Voici un aperçu de ce qui t'attend en boutique.</p>
+
+  <!-- Catégorie : Les Box -->
+  <h3 class="cat reveal">🍚 Les Box <span>— sur lit de riz parfumé</span></h3>
   <div class="menu-grid">
     <div class="card reveal">
       <span class="badge">★ Best-seller</span>
       <span class="emoji">🍚</span>
-      <h3>Box Crousty</h3>
-      <p>Poulet pané panko sur lit de riz parfumé, sauce blanche + ta sauce signature.</p>
+      <h3>Box Classic</h3>
+      <p>Poulet pané panko, riz parfumé, sauce blanche + ta sauce signature.</p>
       <span class="price">10,90 €</span>
     </div>
     <div class="card reveal d1">
-      <span class="emoji">🍗</span>
-      <h3>Tenders Crousty</h3>
-      <p>5 tenders ultra croustillants, frites maison et sauce au choix.</p>
-      <span class="price">8,90 €</span>
+      <span class="badge" style="background:var(--crousty-deep)">🌶️ Spicy</span>
+      <span class="emoji">🌶️</span>
+      <h3>Box Spicy</h3>
+      <p>La Box Classic relevée à la sauce sriracha maison et piment doux.</p>
+      <span class="price">11,90 €</span>
     </div>
     <div class="card reveal d2">
-      <span class="emoji">🌯</span>
-      <h3>Crousty Wrap</h3>
-      <p>Galette moelleuse, poulet crousti, crudités, cheddar et sauce signature.</p>
-      <span class="price">7,90 €</span>
+      <span class="emoji">🧀</span>
+      <h3>Box Cheese</h3>
+      <p>Poulet crousti, cheddar fondu, oignons frits et sauce biggy maison.</p>
+      <span class="price">11,90 €</span>
     </div>
     <div class="card reveal d3">
-      <span class="badge" style="background:var(--crousty-deep)">🌶️ Spicy</span>
+      <span class="emoji">🍗</span>
+      <h3>Box Maxi</h3>
+      <p>Double portion de poulet pour les grosses faims. Riz + 2 sauces.</p>
+      <span class="price">13,90 €</span>
+    </div>
+  </div>
+
+  <!-- Catégorie : Wraps & Burgers -->
+  <h3 class="cat reveal">🌯 Wraps &amp; Burgers</h3>
+  <div class="menu-grid">
+    <div class="card reveal">
+      <span class="emoji">🌯</span>
+      <h3>Crousty Wrap</h3>
+      <p>Galette moelleuse, poulet crousti, crudités, cheddar, sauce signature.</p>
+      <span class="price">7,90 €</span>
+    </div>
+    <div class="card reveal d1">
+      <span class="badge">♥ Coup de cœur</span>
       <span class="emoji">🍔</span>
       <h3>Crousty Burger</h3>
       <p>Filet pané croustillant, cheddar fondant, oignons frits, sauce maison.</p>
       <span class="price">8,50 €</span>
     </div>
+    <div class="card reveal d2">
+      <span class="emoji">🍔</span>
+      <h3>Double Crousty</h3>
+      <p>Deux filets panko, double cheddar, bacon de bœuf et sauce burger.</p>
+      <span class="price">11,50 €</span>
+    </div>
+  </div>
+
+  <!-- Catégorie : À partager -->
+  <h3 class="cat reveal">🍗 À partager</h3>
+  <div class="menu-grid">
     <div class="card reveal">
+      <span class="emoji">🍗</span>
+      <h3>Tenders x5</h3>
+      <p>5 tenders ultra croustillants, frites maison et sauce au choix.</p>
+      <span class="price">8,90 €</span>
+    </div>
+    <div class="card reveal d1">
+      <span class="badge">👨‍👩‍👧 Famille</span>
+      <span class="emoji">🪣</span>
+      <h3>Bucket 8 pièces</h3>
+      <p>8 morceaux de poulet crousti à partager, 3 sauces offertes.</p>
+      <span class="price">16,90 €</span>
+    </div>
+    <div class="card reveal d2">
+      <span class="emoji">🍗</span>
+      <h3>Nuggets x9</h3>
+      <p>9 nuggets dorés et fondants, panure croustillante maison.</p>
+      <span class="price">6,90 €</span>
+    </div>
+    <div class="card reveal d3">
       <span class="emoji">🍟</span>
       <h3>Frites Cheesy</h3>
       <p>Frites croustillantes noyées de cheddar fondu et oignons frits.</p>
       <span class="price">4,90 €</span>
     </div>
+  </div>
+
+  <!-- Catégorie : Desserts & Boissons -->
+  <h3 class="cat reveal">🍰 Desserts &amp; Boissons</h3>
+  <div class="menu-grid">
+    <div class="card reveal">
+      <span class="emoji">🍪</span>
+      <h3>Cookie tiède</h3>
+      <p>Cookie maison chocolat fondu, croustillant dehors, moelleux dedans.</p>
+      <span class="price">2,90 €</span>
+    </div>
     <div class="card reveal d1">
+      <span class="emoji">🍮</span>
+      <h3>Tiramisu Spéculoos</h3>
+      <p>Crème mascarpone onctueuse, éclats de spéculoos croustillants.</p>
+      <span class="price">3,90 €</span>
+    </div>
+    <div class="card reveal d2">
       <span class="emoji">🥤</span>
-      <h3>Menu Maxi</h3>
-      <p>Box ou wrap au choix + frites + boisson. Le combo des affamés.</p>
-      <span class="price">13,90 €</span>
+      <h3>Boisson 33 cl</h3>
+      <p>Sodas, thés glacés et eaux. Au choix parmi 8 références.</p>
+      <span class="price">1,90 €</span>
+    </div>
+    <div class="card reveal d3">
+      <span class="emoji">🥛</span>
+      <h3>Milkshake</h3>
+      <p>Vanille, fraise, oreo ou caramel beurre salé. Onctueux à souhait.</p>
+      <span class="price">3,90 €</span>
     </div>
   </div>
+
+  <p class="reveal" style="color:#a98a68;font-size:.9rem;margin-top:2.4rem">Menu (plat + frites + boisson) : +3,50 € sur tout plat principal · Carte non contractuelle</p>
 </section>
 
 <!-- SAUCES -->
@@ -406,13 +485,13 @@
 
 <!-- HOW / steps -->
 <section class="block" id="how" style="text-align:center">
-  <p class="eyebrow reveal">🛵 Simple comme bonjour</p>
-  <h2 class="section-title reveal">Commander en 4 étapes</h2>
+  <p class="eyebrow reveal">👨‍🍳 Le savoir-faire maison</p>
+  <h2 class="section-title reveal">Du frais, en 4 étapes</h2>
   <div class="steps">
-    <div class="step reveal"><div class="circle">📱</div><h3>1. Choisis</h3><p>Parcours le menu et compose ton festin.</p></div>
-    <div class="step reveal d1"><div class="circle">🧑‍🍳</div><h3>2. On cuisine</h3><p>Poulet pané et frit à la minute, jamais avant.</p></div>
-    <div class="step reveal d2"><div class="circle">🛵</div><h3>3. On livre</h3><p>Livraison express, encore tout chaud et croustillant.</p></div>
-    <div class="step reveal d3"><div class="circle">😋</div><h3>4. Tu craques</h3><p>Premier croc… et c'est déjà fini. Recommence !</p></div>
+    <div class="step reveal"><div class="circle">🧂</div><h3>1. On marine</h3><p>Le poulet repose 24 h dans notre marinade secrète d'épices.</p></div>
+    <div class="step reveal d1"><div class="circle">🍞</div><h3>2. On pane</h3><p>Panure au panko japonais, à la main, pour un croustillant unique.</p></div>
+    <div class="step reveal d2"><div class="circle">🔥</div><h3>3. On frit minute</h3><p>Cuisson à la minute, jamais à l'avance. Toujours doré et chaud.</p></div>
+    <div class="step reveal d3"><div class="circle">😋</div><h3>4. Tu craques</h3><p>Sur lit de riz, nappé de sauce maison. Premier croc… révélation.</p></div>
   </div>
 </section>
 
@@ -422,11 +501,11 @@
     <div class="reveal">
       <p class="eyebrow">📍 Le concept Farmer Crousty</p>
       <h2 class="section-title" style="margin-bottom:.3em">Né du phénomène crousti</h2>
-      <p style="color:#7a5a3a;max-width:520px;margin-bottom:18px">Le « crousti », c'est LA street food qui a conquis la France : un poulet mariné, pané au panko et frit minute, servi sur un lit de riz avec une sauce blanche maison irrésistible. Chez <b>Farmer Crousty</b>, on en a fait notre obsession — recette maison, produits frais, halal, et un croustillant qui ne faiblit jamais. À emporter ou en livraison, toujours préparé à la commande.</p>
+      <p style="color:#7a5a3a;max-width:520px;margin-bottom:18px">Le « crousti », c'est LA street food qui a conquis la France : un poulet mariné, pané au panko et frit minute, servi sur un lit de riz avec une sauce blanche maison irrésistible. Chez <b>Farmer Crousty</b>, on en a fait notre obsession — recette maison, produits frais, halal, et un croustillant qui ne faiblit jamais. À déguster sur place ou à emporter, toujours préparé minute.</p>
       <div style="display:flex;gap:12px;flex-wrap:wrap">
         <span class="price" style="background:var(--green)">🌱 Produits frais</span>
         <span class="price">🕒 Préparé minute</span>
-        <span class="price" style="background:var(--crousty-deep)">🛵 Click &amp; collect / livraison</span>
+        <span class="price" style="background:var(--crousty-deep)">🍽️ Sur place &amp; à emporter</span>
       </div>
     </div>
     <div class="panel reveal d1">
@@ -437,10 +516,10 @@
       <h3>🍗 Passe nous voir</h3>
       <div class="info-row"><span class="ic">📍</span><div><b>Adresse</b><span>42 rue de la République, 69002 Lyon</span></div></div>
       <div class="info-row"><span class="ic">🕒</span><div><b>Horaires</b><span>Lun–Jeu 11h–23h · Ven–Sam 11h–01h · Dim 12h–23h</span></div></div>
-      <div class="info-row"><span class="ic">🛵</span><div><b>Livraison</b><span>Uber Eats · Deliveroo · Click &amp; Collect (rayon 5 km)</span></div></div>
+      <div class="info-row"><span class="ic">🍽️</span><div><b>Sur place &amp; à emporter</b><span>40 couverts · terrasse l'été · parking à proximité</span></div></div>
       <div class="info-row"><span class="ic">📞</span><div><b>Téléphone</b><span>04 78 12 34 56</span></div></div>
       <div class="info-row"><span class="ic">✉️</span><div><b>Email</b><span>bonjour@farmercrousty.fr</span></div></div>
-      <button class="cta-btn" style="margin-top:16px;width:100%" onclick="order()">🛵 Commander en ligne</button>
+      <a href="tel:0478123456" class="cta-btn" style="margin-top:16px;width:100%;text-align:center">📞 Nous appeler</a>
     </div>
   </div>
 </section>
@@ -457,8 +536,8 @@
   </div>
   <div class="testi-grid">
     <div class="testi reveal"><div class="stars">★★★★★</div><p>"Le poulet le plus croustillant que j'aie mangé. La sauce blanche maison, une tuerie !"</p><div class="who"><span class="ava">S</span>Sarah M. <em>· il y a 2 jours</em></div></div>
-    <div class="testi reveal d1"><div class="stars">★★★★★</div><p>"Livré chaud, ultra croustillant même après 20 min. Bluffant, je recommande à 100%."</p><div class="who"><span class="ava">K</span>Karim B. <em>· il y a 1 semaine</em></div></div>
-    <div class="testi reveal d2"><div class="stars">★★★★★</div><p>"La Box Crousty en famille = adoptée. On commande toutes les semaines maintenant."</p><div class="who"><span class="ava">L</span>Léa &amp; Tom <em>· il y a 2 semaines</em></div></div>
+    <div class="testi reveal d1"><div class="stars">★★★★★</div><p>"Croustillant incroyable, encore chaud jusqu'à la dernière bouchée. Bluffant, je recommande à 100%."</p><div class="who"><span class="ava">K</span>Karim B. <em>· il y a 1 semaine</em></div></div>
+    <div class="testi reveal d2"><div class="stars">★★★★★</div><p>"La Box Crousty en famille = adoptée. On y retourne toutes les semaines maintenant."</p><div class="who"><span class="ava">L</span>Léa &amp; Tom <em>· il y a 2 semaines</em></div></div>
     <div class="testi reveal"><div class="stars">★★★★★</div><p>"Accueil au top, portions généreuses et un riz parfumé qui change tout. Mon QG du midi."</p><div class="who"><span class="ava">M</span>Mehdi A. <em>· il y a 3 semaines</em></div></div>
     <div class="testi reveal d1"><div class="stars">★★★★☆</div><p>"Excellent rapport qualité-prix. Un poil d'attente le vendredi soir, mais ça vaut le coup !"</p><div class="who"><span class="ava">C</span>Chloé D. <em>· il y a 1 mois</em></div></div>
     <div class="testi reveal d2"><div class="stars">★★★★★</div><p>"Le wrap crousti spicy est devenu une addiction. Sauces maison incroyables. Halal et nickel."</p><div class="who"><span class="ava">Y</span>Yanis R. <em>· il y a 1 mois</em></div></div>
@@ -471,8 +550,8 @@
     <span class="float" style="top:12%;left:8%">🍗</span>
     <span class="float" style="bottom:14%;right:10%;animation-delay:1s">🍔</span>
     <h2>FAIM DE CROUSTILLANT ?</h2>
-    <p>Ta commande t'attend. Frais, croustillant, livré chaud en un éclair.</p>
-    <button class="cta-btn" style="font-size:1.2rem;padding:16px 34px" onclick="order()">🛵 Commander maintenant</button>
+    <p>On t'attend en boutique, frais et croustillant à toute heure. Viens craquer !</p>
+    <a class="cta-btn" style="font-size:1.2rem;padding:16px 34px" href="#visit">📍 Venez nous voir</a>
   </div>
 </section>
 
@@ -531,12 +610,6 @@
   const nav=document.getElementById('nav');
   function toggleNav(){nav.classList.toggle('open')}
   function closeNav(){nav.classList.remove('open')}
-
-  // Order (demo)
-  function order(){
-    const c=document.getElementById('curtain');
-    alert('🍗 Merci ! Ta commande Farmer Crousty est en route (démo).');
-  }
 
   // Reveal on scroll
   const io=new IntersectionObserver((es)=>{
