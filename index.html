@@ -698,6 +698,14 @@
 <button id="top" onclick="scrollTo({top:0,behavior:'smooth'})" aria-label="haut">↑</button>
 
 <script>
+  // Filet de sécurité INDÉPENDANT : affiche tout le contenu même si le script
+  // principal échoue (bloc séparé pour qu'une erreur ailleurs ne le bloque pas).
+  setTimeout(function(){
+    var els=document.querySelectorAll('.reveal:not(.in)');
+    for(var i=0;i<els.length;i++){ els[i].classList.add('in'); }
+  },2600);
+</script>
+<script>
   // Preloader lift — robuste : se lève même si une ressource externe (polices) ne charge pas
   (function(){
     var done=false;
@@ -712,11 +720,11 @@
   })();
 
   // Header scroll + back-to-top
-  const header=document.getElementById('header'),top=document.getElementById('top');
+  const header=document.getElementById('header'),topBtn=document.getElementById('top');
   addEventListener('scroll',()=>{
     const y=scrollY;
     header.classList.toggle('scrolled',y>40);
-    top.classList.toggle('show',y>600);
+    topBtn.classList.toggle('show',y>600);
   });
 
   // Mobile nav
