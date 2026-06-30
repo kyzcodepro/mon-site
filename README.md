@@ -1,7 +1,16 @@
 # 🍗 Farmer Crousty
 
-Site vitrine animé pour **Farmer Crousty**, l'enseigne du poulet croustillant.
-Page d'accueil immersive, gourmande et pleine d'animations conçue pour donner faim.
+Site vitrine animé pour **Farmer Crousty**, l'enseigne du **poulet crousti** :
+poulet mariné pané au panko japonais, frit à la minute, servi sur un lit de riz
+parfumé avec sauce blanche maison et sauces signature — frais, halal, fait maison.
+Page d'accueil purement marketing, immersive et pleine d'animations pour donner
+envie d'aller y manger.
+
+## 🍽️ Sections
+
+Hero · Bandeau · Chiffres clés · Menu (Box, Tenders, Wrap, Burger…) · Sauces
+signature · Le croustillant (showcase) · Commander en 4 étapes · Le concept &
+nous trouver · Avis clients · Appel à l'action · Footer.
 
 ## ✨ Au menu des animations
 
