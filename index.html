@@ -34,8 +34,10 @@
   #curtain{
     position:fixed;inset:0;z-index:9999;background:var(--crousty-deep);
     display:grid;place-items:center;transition:transform .9s cubic-bezier(.7,0,.2,1);
+    animation:curtainAuto .9s cubic-bezier(.7,0,.2,1) 1.6s forwards;
   }
   #curtain.lift{transform:translateY(-100%)}
+  @keyframes curtainAuto{to{transform:translateY(-100%);visibility:hidden}}
   #curtain .load{font-family:'Bebas Neue';color:#fff;font-size:clamp(3rem,12vw,9rem);text-align:center}
   #curtain .load span{display:inline-block;animation:dropIn .6s both}
   #curtain .bite{font-size:clamp(2rem,8vw,5rem);animation:chew 1.1s infinite}
@@ -231,7 +233,7 @@
     .showcase .visual{height:320px}
     .showcase .big-chick{font-size:9rem}
   }
-  @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+  @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}#curtain{display:none!important}}
 </style>
 </head>
 <body>
