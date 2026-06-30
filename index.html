@@ -82,11 +82,9 @@
     background-size:300% 300%;animation:flame 12s ease infinite;
   }
   @keyframes flame{0%{background-position:0 50%}50%{background-position:100% 50%}100%{background-position:0 50%}}
-  .hero canvas{position:absolute;inset:0;width:100%;height:100%;opacity:.55}
-  .hero .glow{position:absolute;width:60vmax;height:60vmax;border-radius:50%;
-    background:radial-gradient(circle,rgba(255,210,76,.55),transparent 60%);
-    filter:blur(20px);animation:floatGlow 9s ease-in-out infinite}
-  @keyframes floatGlow{0%,100%{transform:translate(-20%,-10%)}50%{transform:translate(20%,15%) scale(1.2)}}
+  .hero-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1}
+  .hero-overlay{position:absolute;inset:0;z-index:2;
+    background:linear-gradient(120deg,rgba(226,62,0,.78),rgba(180,30,0,.55) 50%,rgba(122,31,0,.82)),radial-gradient(circle at 50% 120%,transparent,rgba(0,0,0,.45))}
   .hero-inner{position:relative;z-index:3;padding:0 18px;max-width:980px}
   .kicker{display:inline-block;background:rgba(0,0,0,.25);padding:8px 18px;border-radius:30px;
     font-weight:600;letter-spacing:2px;text-transform:uppercase;font-size:.8rem;backdrop-filter:blur(4px);
@@ -182,9 +180,8 @@
   .showcase{background:var(--ink);color:#fff;display:grid;grid-template-columns:1fr 1fr;gap:50px;align-items:center}
   .showcase .visual{position:relative;height:420px;border-radius:30px;overflow:hidden;
     background:radial-gradient(circle at 50% 120%,#ff8a00,#7a1f00 70%);display:grid;place-items:center;box-shadow:inset 0 0 80px rgba(0,0,0,.6)}
-  .showcase .big-chick{font-size:13rem;animation:sizzle 2.5s ease-in-out infinite;filter:drop-shadow(0 20px 30px rgba(0,0,0,.5))}
-  @keyframes sizzle{0%,100%{transform:translateY(0) rotate(-3deg) scale(1)}50%{transform:translateY(-16px) rotate(3deg) scale(1.06)}}
-  .steam{position:absolute;bottom:55%;width:14px;height:60px;background:linear-gradient(to top,rgba(255,255,255,.6),transparent);border-radius:50%;filter:blur(6px);animation:rise 3.5s linear infinite}
+  .showcase .visual-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0}
+  .steam{position:absolute;bottom:55%;width:14px;height:60px;background:linear-gradient(to top,rgba(255,255,255,.6),transparent);border-radius:50%;filter:blur(6px);animation:rise 3.5s linear infinite;z-index:1}
   .showcase h2{font-size:clamp(2.4rem,6vw,4.2rem)}
   .showcase p{color:#ffd9b0;margin:.8em 0 1.4em;max-width:480px}
   @keyframes rise{0%{transform:translateY(0) scale(1);opacity:0}20%{opacity:.8}100%{transform:translateY(-180px) scale(2);opacity:0}}
@@ -221,8 +218,9 @@
     color:#fff;font-weight:600;background:linear-gradient(to top,rgba(0,0,0,.6),transparent 55%);opacity:0;transition:.35s}
   .shot:hover{transform:scale(1.05)}
   .shot:hover::after{opacity:1}
-  .shot:hover span{transform:scale(1.2) rotate(6deg)}
-  .shot span{transition:transform .35s;filter:drop-shadow(0 10px 14px rgba(0,0,0,.3))}
+  .shot video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0}
+  .shot::after{z-index:1}
+  .shot span{transition:transform .35s;filter:drop-shadow(0 10px 14px rgba(0,0,0,.3));z-index:1}
   .shot.tall{grid-row:span 2;aspect-ratio:auto}
   .g1{background:linear-gradient(135deg,#ffb347,#e23e00)}
   .g2{background:linear-gradient(135deg,#ff8a00,#7a1f00)}
@@ -291,7 +289,6 @@
     .burger{display:flex;z-index:950}
     .showcase{grid-template-columns:1fr}
     .showcase .visual{height:320px}
-    .showcase .big-chick{font-size:9rem}
   }
   @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}#curtain{display:none!important}}
 </style>
@@ -322,13 +319,10 @@
 
 <!-- HERO -->
 <section class="hero" id="hero">
-  <canvas id="bgfx"></canvas>
-  <div class="glow"></div>
-  <span class="float" style="top:18%;left:8%">🍗</span>
-  <span class="float" style="top:30%;right:10%;animation-delay:1.5s">🍔</span>
-  <span class="float" style="bottom:20%;left:14%;animation-delay:.8s">🍟</span>
-  <span class="float" style="bottom:26%;right:16%;animation-delay:2.2s">🌶️</span>
-  <span class="float" style="top:14%;right:30%;animation-delay:3s">🧀</span>
+  <video class="hero-video" autoplay muted loop playsinline preload="auto" poster="">
+    <source src="https://assets.mixkit.co/videos/30811/30811-720.mp4" type="video/mp4" />
+  </video>
+  <div class="hero-overlay"></div>
 
   <div class="hero-inner">
     <span class="kicker">🔥 Pané au panko • Sur lit de riz • Sauce blanche maison</span>
@@ -507,10 +501,12 @@
 <!-- SHOWCASE / video-like -->
 <section class="block showcase" id="why">
   <div class="visual reveal">
+    <video class="visual-video" autoplay muted loop playsinline preload="auto">
+      <source src="https://assets.mixkit.co/videos/22396/22396-720.mp4" type="video/mp4" />
+    </video>
     <div class="steam" style="left:42%;animation-delay:0s"></div>
     <div class="steam" style="left:50%;animation-delay:1s"></div>
     <div class="steam" style="left:58%;animation-delay:2s"></div>
-    <div class="big-chick">🍗</div>
   </div>
   <div>
     <p class="eyebrow reveal">🔥 La croûte parfaite</p>
@@ -563,16 +559,14 @@
   <h2 class="section-title reveal">Ça donne faim, non ?</h2>
   <p class="reveal d1" style="color:#7a5a3a;max-width:560px;margin:0 auto 2.4rem">Un avant-goût de ce qui t'attend. Survole les photos.</p>
   <div class="gallery">
-    <div class="shot g1 tall reveal" data-label="Box Crousty signature"><span>🍚</span></div>
-    <div class="shot g2 reveal d1" data-label="Tenders dorés"><span>🍗</span></div>
-    <div class="shot g3 reveal d2" data-label="Crousty Burger"><span>🍔</span></div>
-    <div class="shot g4 reveal d1" data-label="Frites Cheesy"><span>🍟</span></div>
-    <div class="shot g5 tall reveal d2" data-label="Sauces maison"><span>🥣</span></div>
-    <div class="shot g3 reveal" data-label="Crousty Wrap"><span>🌯</span></div>
-    <div class="shot g1 reveal d1" data-label="Bucket à partager"><span>🪣</span></div>
-    <div class="shot g2 reveal d2" data-label="Milkshake gourmand"><span>🥛</span></div>
-    <div class="shot g4 reveal" data-label="Cookie tiède"><span>🍪</span></div>
-    <div class="shot g5 reveal d1" data-label="Ambiance boutique"><span>🧑‍🍳</span></div>
+    <div class="shot g2 tall reveal" data-label="Poulet grillé croustillant"><video autoplay muted loop playsinline preload="metadata"><source src="https://assets.mixkit.co/videos/30811/30811-720.mp4" type="video/mp4" /></video></div>
+    <div class="shot g1 reveal d1" data-label="Burger &amp; frites"><video autoplay muted loop playsinline preload="metadata"><source src="https://assets.mixkit.co/videos/24105/24105-720.mp4" type="video/mp4" /></video></div>
+    <div class="shot g3 reveal d2" data-label="Frites au ralenti"><video autoplay muted loop playsinline preload="metadata"><source src="https://assets.mixkit.co/videos/47159/47159-720.mp4" type="video/mp4" /></video></div>
+    <div class="shot g4 reveal d1" data-label="Chicken burger"><video autoplay muted loop playsinline preload="metadata"><source src="https://assets.mixkit.co/videos/3537/3537-720.mp4" type="video/mp4" /></video></div>
+    <div class="shot g4 tall reveal d2" data-label="Sauce maison"><video autoplay muted loop playsinline preload="metadata"><source src="https://assets.mixkit.co/videos/3806/3806-720.mp4" type="video/mp4" /></video></div>
+    <div class="shot g5 reveal" data-label="Burger gourmand"><video autoplay muted loop playsinline preload="metadata"><source src="https://assets.mixkit.co/videos/46697/46697-720.mp4" type="video/mp4" /></video></div>
+    <div class="shot g3 reveal d1" data-label="Frites croustillantes"><video autoplay muted loop playsinline preload="metadata"><source src="https://assets.mixkit.co/videos/26263/26263-720.mp4" type="video/mp4" /></video></div>
+    <div class="shot g2 reveal d2" data-label="Cuisson minute"><video autoplay muted loop playsinline preload="metadata"><source src="https://assets.mixkit.co/videos/46663/46663-720.mp4" type="video/mp4" /></video></div>
   </div>
 </section>
 
@@ -752,33 +746,10 @@
   },{threshold:.5});
   counters.forEach(c=>cio.observe(c));
 
-  // Hero particle canvas (animated sparks/grease bubbles)
-  const cv=document.getElementById('bgfx'),ctx=cv.getContext('2d');
-  let W,H,parts;
-  function resize(){W=cv.width=cv.offsetWidth;H=cv.height=cv.offsetHeight;
-    parts=Array.from({length:Math.min(90,Math.round(W/14))},()=>({
-      x:Math.random()*W,y:Math.random()*H,r:1+Math.random()*4,
-      vy:.3+Math.random()*1.2,vx:(Math.random()-.5)*.4,a:.2+Math.random()*.5
-    }));
-  }
-  resize();addEventListener('resize',resize);
-  (function draw(){
-    ctx.clearRect(0,0,W,H);
-    for(const p of parts){
-      ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,7);
-      ctx.fillStyle='rgba(255,235,180,'+p.a+')';ctx.fill();
-      p.y-=p.vy;p.x+=p.vx;
-      if(p.y< -10){p.y=H+10;p.x=Math.random()*W}
-    }
-    requestAnimationFrame(draw);
-  })();
-
-  // Parallax on floating emojis
-  addEventListener('mousemove',e=>{
-    const dx=(e.clientX/innerWidth-.5),dy=(e.clientY/innerHeight-.5);
-    document.querySelectorAll('.hero .float').forEach((f,i)=>{
-      const d=(i+1)*8;f.style.transform=`translate(${dx*d}px,${dy*d}px)`;
-    });
+  // Lecture des vidéos en autoplay muet (robuste sur navigateurs stricts)
+  document.querySelectorAll('video').forEach(v=>{
+    v.muted=true; v.setAttribute('muted','');
+    const p=v.play(); if(p&&p.catch) p.catch(()=>{});
   });
 </script>
 </body>
