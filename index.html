@@ -472,8 +472,18 @@
 <button id="top" onclick="scrollTo({top:0,behavior:'smooth'})" aria-label="haut">↑</button>
 
 <script>
-  // Preloader lift
-  window.addEventListener('load',()=>{setTimeout(()=>document.getElementById('curtain').classList.add('lift'),700)});
+  // Preloader lift — robuste : se lève même si une ressource externe (polices) ne charge pas
+  (function(){
+    var done=false;
+    function lift(){ if(done) return; done=true; var c=document.getElementById('curtain'); if(c) c.classList.add('lift'); }
+    // dès que le DOM est prêt + courte pause pour l'animation d'intro
+    if(document.readyState!=='loading'){ setTimeout(lift,900); }
+    else { document.addEventListener('DOMContentLoaded',function(){ setTimeout(lift,900); }); }
+    // si 'load' arrive avant, on lève aussi
+    window.addEventListener('load',function(){ setTimeout(lift,300); });
+    // filet de sécurité : on lève au plus tard après 2,5 s quoi qu'il arrive
+    setTimeout(lift,2500);
+  })();
 
   // Header scroll + back-to-top
   const header=document.getElementById('header'),top=document.getElementById('top');
