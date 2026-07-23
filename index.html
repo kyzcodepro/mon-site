@@ -149,6 +149,7 @@
   .balance-hero .bh-label{font-size:.82rem;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:rgba(255,255,255,.7)}
   .balance-hero .bh-amount{font-size:clamp(2.2rem,5vw,3.2rem);font-weight:800;letter-spacing:-1px;margin:8px 0 4px}
   .balance-hero .bh-iban{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.85rem;color:rgba(255,255,255,.65);letter-spacing:1px}
+  .balance-hero .bh-live{font-size:.85rem;color:#6ee7b7;margin:-2px 0 8px;letter-spacing:.5px;font-variant-numeric:tabular-nums;min-height:1.2em}
   .balance-hero .bh-actions{margin-top:22px;display:flex;gap:12px;flex-wrap:wrap;position:relative;z-index:1}
 
   /* ============ tableaux ============ */
@@ -391,6 +392,7 @@ const TX_STYLE = {
   retrait:  { ico:'🏧', chip:'warn', name:'Retrait' },
   admin_credit: { ico:'💰', chip:'ok', name:'Dépôt' },
   admin_debit:  { ico:'🏧', chip:'warn', name:'Retrait' },
+  interet:      { ico:'🌱', chip:'ok', name:'Intérêts' },
 };
 const txStyle = t => TX_STYLE[t] || { ico:'💳', chip:'info', name:t };
 
@@ -456,26 +458,32 @@ function animateNum(el, target, format){
 /* =====================================================
    VUE CLIENT
    ===================================================== */
+const TAUX_ANNUEL = 0.20; // épargne : 20 % par an
+let liveTick = null;
+
 function renderClientDash(view){
   const u = state.me;
   const lg = state.ledger;
   const inMonth = lg.filter(l => l.montant>0 && Date.now()-l.ts < 30*86400000).reduce((s,l)=>s+l.montant,0);
   const outMonth = lg.filter(l => l.montant<0 && Date.now()-l.ts < 30*86400000).reduce((s,l)=>s-l.montant,0);
+  const interetsCumules = lg.filter(l=>l.type==='interet').reduce((s,l)=>s+l.montant,0);
+  const dans1an = u.solde * (1 + TAUX_ANNUEL);
 
   view.innerHTML = `
     <div class="topbar fade-in">
       <div>
         <button class="menu-btn" id="mn">☰</button>
         <h1 style="display:inline-block;vertical-align:middle">Bonjour, ${esc(u.prenom)} 👋</h1>
-        <div class="sub">Voici l'état de ton compte aujourd'hui.</div>
+        <div class="sub">Ton épargne travaille pour toi, même pendant que tu dors.</div>
       </div>
     </div>
 
     ${u.statut==='bloqué' ? `<div class="card fade-in" style="border-color:rgba(248,113,113,.5);margin-bottom:20px"><b class="danger-text">⚠️ Compte suspendu</b><div class="muted mt" style="margin-top:6px">Ton compte est temporairement bloqué. Contacte le support Kyz Account.</div></div>` : ''}
 
     <div class="balance-hero fade-in">
-      <div class="bh-label">Solde disponible</div>
+      <div class="bh-label">Mon épargne <span class="chip ok" style="margin-left:8px;vertical-align:middle">🌱 20 % / an</span></div>
       <div class="bh-amount" id="bal-num">${eur(0)}</div>
+      <div class="bh-live mono" id="bal-live"></div>
       <div class="bh-iban">N° de compte&nbsp;: ${fmtNumero(u.numero)}</div>
       <div class="bh-actions">
         <button class="btn small" id="act-demande" ${u.statut==='bloqué'?'disabled':''}>📤 Demande de virement</button>
@@ -485,14 +493,15 @@ function renderClientDash(view){
     ${renderRequestsCard(u)}
 
     <div class="grid cols-3 mt fade-in">
-      <div class="card tile"><div class="t-label">📥 Entrées (30 j)</div><div class="t-value" style="color:var(--good)">+${eur(inMonth).replace(/ €/,' €')}</div><div class="t-delta">revenus et virements reçus</div></div>
-      <div class="card tile"><div class="t-label">📤 Sorties (30 j)</div><div class="t-value" style="color:var(--bad)">−${eur(outMonth).replace(/ €/,' €')}</div><div class="t-delta">paiements et virements émis</div></div>
-      <div class="card tile"><div class="t-label">🧾 Opérations</div><div class="t-value">${lg.length}</div><div class="t-delta">depuis l'ouverture</div></div>
+      <div class="card tile"><div class="t-label">🌱 Intérêts cumulés</div><div class="t-value" style="color:var(--good)">+${eur(interetsCumules)}</div><div class="t-delta up">gagnés automatiquement</div></div>
+      <div class="card tile"><div class="t-label">🔮 Dans 1 an</div><div class="t-value">${eur(dans1an)}</div><div class="t-delta">au taux actuel de 20 %</div></div>
+      <div class="card tile"><div class="t-label">📥 Entrées (30 j)</div><div class="t-value" style="color:var(--good)">+${eur(inMonth)}</div><div class="t-delta">dépôts et intérêts</div></div>
+      <div class="card tile"><div class="t-label">📤 Sorties (30 j)</div><div class="t-value" style="color:var(--bad)">−${eur(outMonth)}</div><div class="t-delta">virements et retraits</div></div>
     </div>
 
     <div class="card mt fade-in">
       <div class="card-head">
-        <h3>Évolution du solde</h3>
+        <h3>Évolution de l'épargne</h3>
         <span class="hint">90 derniers jours</span>
       </div>
       <div class="viz-root" id="viz">
@@ -513,7 +522,22 @@ function renderClientDash(view){
   animateNum($('#bal-num'), u.solde, v=>eur(v));
   $('#see-all').addEventListener('click', ()=>{ currentView='historique'; renderApp(); });
   $('#act-demande') && $('#act-demande').addEventListener('click', modalDemande);
+  startLiveGrowth(u);
   drawChart(u);
+}
+
+/* Le solde grossit en direct à l'écran (20 %/an, capitalisation continue) */
+function startLiveGrowth(u){
+  if (liveTick) clearInterval(liveTick);
+  const el = $('#bal-live');
+  if (!el || !(u.solde > 0)) return;
+  const t0 = Date.now();
+  liveTick = setInterval(()=>{
+    if (!document.getElementById('bal-live')){ clearInterval(liveTick); liveTick = null; return; }
+    const dtAns = (Date.now() - t0) / (365 * 86400000);
+    const val = u.solde * Math.pow(1 + TAUX_ANNUEL, dtAns);
+    el.textContent = 'En direct : ' + val.toLocaleString('fr-FR', { minimumFractionDigits: 7, maximumFractionDigits: 7 }) + ' € et ça monte…';
+  }, 120);
 }
 
 /* ---------- demandes de virement ---------- */

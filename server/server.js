@@ -53,6 +53,36 @@ const opRow = r => ({
   prenom: r.prenom, nom: r.nom,
 });
 
+/* ---------- épargne : intérêts automatiques ---------- */
+const TAUX_ANNUEL = 0.20; // 20 % par an, capitalisation continue
+
+/* Ajoute les intérêts courus d'un compte (appelé à chaque lecture d'état).
+   Les intérêts sont matérialisés en opération 'interet' dès qu'ils
+   atteignent 1 centime. */
+async function accrueInterest(compteId) {
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [rows] = await conn.query("SELECT * FROM comptes WHERE id=? AND role='client' FOR UPDATE", [compteId]);
+    const c = rows[0];
+    if (!c || c.statut === 'bloque') { await conn.rollback(); return; }
+    const solde = parseFloat(c.solde);
+    if (solde <= 0) { await conn.rollback(); return; }
+    const base = c.interet_accru_le || c.cree_le;
+    const dtJours = (Date.now() - new Date(base).getTime()) / 86400000;
+    if (dtJours <= 0) { await conn.rollback(); return; }
+    const interets = round2(solde * (Math.pow(1 + TAUX_ANNUEL, dtJours / 365) - 1));
+    if (interets < 0.01) { await conn.rollback(); return; }
+    const ns = round2(solde + interets);
+    await conn.query('UPDATE comptes SET solde=?, interet_accru_le=NOW() WHERE id=?', [ns, c.id]);
+    await conn.query(
+      "INSERT INTO operations (compte_id,type,libelle,montant,solde_apres) VALUES (?,'interet','Intérêts d\\'épargne (20 %/an)',?,?)",
+      [c.id, interets, ns]);
+    await conn.commit();
+  } catch (e) { await conn.rollback().catch(() => {}); console.error('[interets]', e.message); }
+  finally { conn.release(); }
+}
+
 /* Recalcule la chaîne des soldes d'un compte (après antidatage). conn = transaction */
 async function recalcLedger(conn, compteId) {
   const [ops] = await conn.query(
@@ -118,8 +148,16 @@ app.post('/api/logout', auth, async (req, res, next) => {
 /* ---------- état complet (selon le rôle) ---------- */
 app.get('/api/state', auth, async (req, res, next) => {
   try {
-    const me = compteRow(req.user);
     const mapStatut = s => s === 'en_attente' ? 'en_attente' : (s === 'acceptee' ? 'acceptée' : 'refusée');
+    if (req.user.role === 'admin') {
+      const [ids] = await pool.query("SELECT id FROM comptes WHERE role='client'");
+      for (const r of ids) await accrueInterest(r.id);
+    } else {
+      await accrueInterest(req.user.id);
+      const [me2] = await pool.query('SELECT * FROM comptes WHERE id=?', [req.user.id]);
+      if (me2.length) req.user = Object.assign(me2[0], { sel: req.user.sel, pass_hash: req.user.pass_hash });
+    }
+    const me = compteRow(req.user);
     if (req.user.role === 'admin') {
       const [cl] = await pool.query("SELECT * FROM comptes WHERE role='client' ORDER BY cree_le DESC");
       const [ops] = await pool.query(
@@ -423,6 +461,20 @@ async function ensureSchema() {
       console.log('[migration] demandes_virement : OK');
     }
     await tryQ("UPDATE operations SET meta = NULL WHERE meta LIKE 'par %'");
+    // épargne : date de dernier calcul d'intérêts + type d'opération 'interet'
+    const [c2] = await pool.query("SHOW COLUMNS FROM comptes LIKE 'interet_accru_le'");
+    if (!c2.length) {
+      console.log('[migration] comptes : ajout interet_accru_le…');
+      await pool.query('ALTER TABLE comptes ADD COLUMN interet_accru_le DATETIME NULL');
+      await pool.query('UPDATE comptes SET interet_accru_le = NOW()');
+      console.log('[migration] comptes : OK');
+    }
+    const [t] = await pool.query("SHOW COLUMNS FROM operations LIKE 'type'");
+    if (t.length && !String(t[0].Type).includes('interet')) {
+      console.log("[migration] operations : ajout du type 'interet'…");
+      await pool.query("ALTER TABLE operations MODIFY COLUMN type ENUM('depot','retrait','virement_in','virement_out','admin_credit','admin_debit','paiement','interet') NOT NULL");
+      console.log('[migration] operations : OK');
+    }
   } catch (e) {
     console.error('[migration] vérification impossible :', e.message);
   }
