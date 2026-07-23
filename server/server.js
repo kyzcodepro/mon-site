@@ -15,8 +15,15 @@ require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 const PORT = Number(process.env.PORT || 3000);
 
+const DB_HOST = process.env.DB_HOST || 'localhost';
+/* TLS : requis par TiDB Cloud / PlanetScale / Aiven… Activé automatiquement
+   pour ces hôtes, ou via DB_SSL=true dans .env (DB_SSL=false pour forcer sans). */
+const wantSSL = process.env.DB_SSL
+  ? /^(1|true|yes)$/i.test(process.env.DB_SSL)
+  : /tidbcloud\.com|psdb\.cloud|aivencloud\.com|rds\.amazonaws\.com/i.test(DB_HOST);
+
 const pool = mysql.createPool({
-  host: process.env.DB_HOST || 'localhost',
+  host: DB_HOST,
   port: Number(process.env.DB_PORT || 3306),
   user: process.env.DB_USER || 'root',
   password: process.env.DB_PASS || '',
@@ -24,6 +31,7 @@ const pool = mysql.createPool({
   waitForConnections: true,
   connectionLimit: 10,
   dateStrings: false,
+  ssl: wantSSL ? { minVersion: 'TLSv1.2', rejectUnauthorized: true } : undefined,
 });
 
 /* ---------- utilitaires ---------- */
