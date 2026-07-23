@@ -1,0 +1,1138 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>NovaBank — Gestion de comptes clients</title>
+<meta name="description" content="NovaBank : application de gestion de comptes clients avec espace personnel, historique des opérations et administration." />
+<style>
+  :root{
+    --bg:#0b0e17;            /* fond app */
+    --surface:#131829;       /* cartes */
+    --surface-2:#1a2138;     /* cartes secondaires / hover */
+    --stroke:rgba(255,255,255,.08);
+    --text:#f2f5fa;
+    --text-2:#9aa5bd;
+    --text-3:#5f6a85;
+    --accent:#6366f1;        /* indigo */
+    --accent-2:#22d3ee;      /* cyan */
+    --series-1:#3987e5;      /* dataviz — série validée sur fond sombre */
+    --good:#34d399;
+    --bad:#f87171;
+    --warn:#fbbf24;
+    --radius:18px;
+    --shadow:0 20px 50px rgba(0,0,0,.45);
+    --grad:linear-gradient(120deg,var(--accent),var(--accent-2));
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    font-family:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+    background:var(--bg);color:var(--text);
+    -webkit-font-smoothing:antialiased;
+  }
+  button{font-family:inherit}
+  input,select{font-family:inherit}
+  ::selection{background:rgba(99,102,241,.4)}
+
+  /* ============ décor de fond ============ */
+  .bg-orbs{position:fixed;inset:0;overflow:hidden;z-index:0;pointer-events:none}
+  .orb{position:absolute;border-radius:50%;filter:blur(90px);opacity:.35;animation:drift 18s ease-in-out infinite alternate}
+  .orb.a{width:520px;height:520px;background:#4338ca;top:-160px;left:-120px}
+  .orb.b{width:420px;height:420px;background:#0e7490;bottom:-140px;right:-100px;animation-delay:4s}
+  .orb.c{width:300px;height:300px;background:#7c3aed;top:40%;left:60%;animation-delay:8s;opacity:.22}
+  @keyframes drift{from{transform:translate(0,0) scale(1)}to{transform:translate(60px,40px) scale(1.15)}}
+
+  /* ============ écrans ============ */
+  .screen{position:relative;z-index:1;min-height:100vh;display:none}
+  .screen.active{display:block}
+  .fade-in{animation:fadeUp .5s cubic-bezier(.2,.7,.2,1) both}
+  @keyframes fadeUp{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
+
+  /* ============ AUTH ============ */
+  #screen-auth{display:none;place-items:center;padding:24px}
+  #screen-auth.active{display:grid}
+  .auth-card{
+    width:min(440px,100%);background:rgba(19,24,41,.85);backdrop-filter:blur(18px);
+    border:1px solid var(--stroke);border-radius:26px;padding:38px 34px;box-shadow:var(--shadow);
+  }
+  .logo-row{display:flex;align-items:center;gap:12px;margin-bottom:26px}
+  .logo-mark{
+    width:44px;height:44px;border-radius:14px;background:var(--grad);
+    display:grid;place-items:center;font-size:1.3rem;font-weight:800;color:#fff;
+    box-shadow:0 10px 24px rgba(99,102,241,.4);
+  }
+  .logo-name{font-size:1.35rem;font-weight:800;letter-spacing:.3px}
+  .logo-name em{font-style:normal;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .auth-title{font-size:1.5rem;font-weight:700;margin-bottom:6px}
+  .auth-sub{color:var(--text-2);font-size:.92rem;margin-bottom:24px}
+  .field{margin-bottom:16px}
+  .field label{display:block;font-size:.8rem;font-weight:600;color:var(--text-2);margin-bottom:7px;letter-spacing:.4px;text-transform:uppercase}
+  .field input,.field select{
+    width:100%;background:var(--surface-2);border:1px solid var(--stroke);color:var(--text);
+    padding:13px 15px;border-radius:12px;font-size:.98rem;outline:none;transition:border .2s, box-shadow .2s;
+  }
+  .field input:focus,.field select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(99,102,241,.25)}
+  .row-2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .btn{
+    display:inline-flex;align-items:center;justify-content:center;gap:8px;
+    background:var(--grad);color:#fff;border:none;border-radius:12px;
+    padding:13px 22px;font-size:1rem;font-weight:700;cursor:pointer;
+    transition:transform .15s, box-shadow .2s, filter .2s;box-shadow:0 12px 28px rgba(99,102,241,.35);
+  }
+  .btn:hover{transform:translateY(-2px);filter:brightness(1.08)}
+  .btn:active{transform:scale(.97)}
+  .btn.block{width:100%}
+  .btn.ghost{background:transparent;border:1px solid var(--stroke);box-shadow:none;color:var(--text-2)}
+  .btn.ghost:hover{color:var(--text);border-color:var(--accent)}
+  .btn.small{padding:8px 14px;font-size:.85rem;border-radius:10px}
+  .btn.danger{background:linear-gradient(120deg,#ef4444,#b91c1c);box-shadow:0 12px 28px rgba(239,68,68,.3)}
+  .btn.success{background:linear-gradient(120deg,#10b981,#047857);box-shadow:0 12px 28px rgba(16,185,129,.3)}
+  .btn.neutral{background:var(--surface-2);box-shadow:none;border:1px solid var(--stroke)}
+  .auth-switch{margin-top:20px;text-align:center;color:var(--text-2);font-size:.92rem}
+  .auth-switch a{color:var(--accent-2);cursor:pointer;font-weight:600;text-decoration:none}
+  .demo-hint{
+    margin-top:22px;padding:13px 15px;border-radius:12px;font-size:.82rem;line-height:1.55;
+    background:rgba(34,211,238,.08);border:1px solid rgba(34,211,238,.25);color:var(--text-2);
+  }
+  .demo-hint code{background:rgba(255,255,255,.09);padding:2px 7px;border-radius:6px;color:var(--accent-2);font-size:.8rem}
+
+  /* ============ APP LAYOUT ============ */
+  .app{display:grid;grid-template-columns:250px 1fr;min-height:100vh}
+  .sidebar{
+    background:rgba(15,19,33,.92);border-right:1px solid var(--stroke);
+    padding:26px 18px;display:flex;flex-direction:column;gap:6px;position:sticky;top:0;height:100vh;
+  }
+  .sidebar .logo-row{margin-bottom:30px;padding:0 8px}
+  .nav-item{
+    display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:12px;
+    color:var(--text-2);font-weight:600;font-size:.95rem;cursor:pointer;border:none;background:none;
+    text-align:left;transition:.2s;width:100%;
+  }
+  .nav-item:hover{background:var(--surface-2);color:var(--text)}
+  .nav-item.active{background:linear-gradient(120deg,rgba(99,102,241,.2),rgba(34,211,238,.12));color:#fff;position:relative}
+  .nav-item.active::before{content:"";position:absolute;left:-18px;top:20%;bottom:20%;width:4px;border-radius:4px;background:var(--grad)}
+  .nav-item .ico{font-size:1.15rem;width:24px;text-align:center}
+  .sidebar .spacer{flex:1}
+  .side-user{
+    display:flex;align-items:center;gap:11px;padding:12px;border-radius:14px;background:var(--surface-2);
+    border:1px solid var(--stroke);
+  }
+  .avatar{width:38px;height:38px;border-radius:50%;background:var(--grad);display:grid;place-items:center;font-weight:800;color:#fff;font-size:.95rem;flex:0 0 auto}
+  .side-user .who{min-width:0}
+  .side-user .who b{display:block;font-size:.88rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .side-user .who span{font-size:.74rem;color:var(--text-3)}
+
+  .main{padding:34px clamp(20px,4vw,46px);min-width:0}
+  .topbar{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:28px;flex-wrap:wrap}
+  .topbar h1{font-size:1.65rem;font-weight:800}
+  .topbar .sub{color:var(--text-2);font-size:.92rem;margin-top:3px}
+
+  /* ============ cartes & tuiles ============ */
+  .grid{display:grid;gap:20px}
+  .grid.cols-3{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+  .grid.cols-2{grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
+  .card{
+    background:var(--surface);border:1px solid var(--stroke);border-radius:var(--radius);
+    padding:24px;box-shadow:0 8px 30px rgba(0,0,0,.25);
+  }
+  .tile .t-label{font-size:.8rem;font-weight:600;color:var(--text-2);letter-spacing:.5px;text-transform:uppercase;display:flex;align-items:center;gap:8px}
+  .tile .t-value{font-size:2rem;font-weight:800;margin-top:10px;letter-spacing:-.5px}
+  .tile .t-delta{font-size:.82rem;margin-top:6px;color:var(--text-3)}
+  .tile .t-delta.up{color:var(--good)}
+  .tile .t-delta.down{color:var(--bad)}
+
+  .balance-hero{
+    background:linear-gradient(135deg,#1e1b4b 0%,#312e81 45%,#155e75 100%);
+    border:1px solid rgba(255,255,255,.12);border-radius:24px;padding:30px;position:relative;overflow:hidden;
+  }
+  .balance-hero::after{
+    content:"";position:absolute;top:-60px;right:-40px;width:240px;height:240px;border-radius:50%;
+    background:radial-gradient(circle,rgba(34,211,238,.35),transparent 65%);
+  }
+  .balance-hero .bh-label{font-size:.82rem;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:rgba(255,255,255,.7)}
+  .balance-hero .bh-amount{font-size:clamp(2.2rem,5vw,3.2rem);font-weight:800;letter-spacing:-1px;margin:8px 0 4px}
+  .balance-hero .bh-iban{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.85rem;color:rgba(255,255,255,.65);letter-spacing:1px}
+  .balance-hero .bh-actions{margin-top:22px;display:flex;gap:12px;flex-wrap:wrap;position:relative;z-index:1}
+
+  /* ============ tableaux ============ */
+  .tbl-wrap{overflow-x:auto}
+  table{width:100%;border-collapse:collapse;font-size:.92rem;min-width:560px}
+  thead th{
+    text-align:left;padding:10px 14px;color:var(--text-3);font-size:.74rem;font-weight:700;
+    letter-spacing:.8px;text-transform:uppercase;border-bottom:1px solid var(--stroke);
+  }
+  tbody td{padding:13px 14px;border-bottom:1px solid rgba(255,255,255,.04)}
+  tbody tr{transition:background .15s}
+  tbody tr:hover{background:rgba(255,255,255,.03)}
+  .amount{font-weight:700;font-variant-numeric:tabular-nums}
+  .amount.pos{color:var(--good)}
+  .amount.neg{color:var(--bad)}
+  .chip{display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:20px;font-size:.76rem;font-weight:700}
+  .chip.ok{background:rgba(52,211,153,.12);color:var(--good)}
+  .chip.ko{background:rgba(248,113,113,.12);color:var(--bad)}
+  .chip.info{background:rgba(57,135,229,.14);color:#7db4f0}
+  .chip.warn{background:rgba(251,191,36,.12);color:var(--warn)}
+  .tx-ico{width:36px;height:36px;border-radius:12px;display:grid;place-items:center;font-size:1rem;background:var(--surface-2);border:1px solid var(--stroke)}
+  .cell-flex{display:flex;align-items:center;gap:12px}
+  .cell-flex .lbl b{display:block;font-size:.92rem}
+  .cell-flex .lbl span{font-size:.76rem;color:var(--text-3)}
+
+  /* ============ chart ============ */
+  .viz-root{position:relative}
+  .viz-root canvas{width:100%;height:240px;display:block}
+  .viz-tip{
+    position:absolute;pointer-events:none;background:#0f1321;border:1px solid var(--stroke);
+    border-radius:10px;padding:8px 12px;font-size:.8rem;box-shadow:var(--shadow);
+    transform:translate(-50%,calc(-100% - 12px));white-space:nowrap;opacity:0;transition:opacity .12s;z-index:5;
+  }
+  .viz-tip b{display:block;font-size:.9rem}
+  .viz-tip span{color:var(--text-2)}
+  .card-head{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:18px;flex-wrap:wrap}
+  .card-head h3{font-size:1.05rem;font-weight:700}
+  .card-head .hint{font-size:.8rem;color:var(--text-3)}
+
+  /* ============ filtres / recherche ============ */
+  .filters{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .search{
+    display:flex;align-items:center;gap:9px;background:var(--surface-2);border:1px solid var(--stroke);
+    border-radius:11px;padding:9px 13px;min-width:200px;
+  }
+  .search input{background:none;border:none;outline:none;color:var(--text);font-size:.9rem;width:100%}
+  .seg{display:inline-flex;background:var(--surface-2);border:1px solid var(--stroke);border-radius:11px;padding:3px;gap:2px}
+  .seg button{border:none;background:none;color:var(--text-2);padding:7px 13px;font-size:.82rem;font-weight:600;border-radius:9px;cursor:pointer;transition:.15s}
+  .seg button.active{background:var(--accent);color:#fff}
+
+  /* ============ modales ============ */
+  .modal-back{
+    position:fixed;inset:0;background:rgba(5,8,18,.7);backdrop-filter:blur(6px);z-index:100;
+    display:none;place-items:center;padding:20px;
+  }
+  .modal-back.open{display:grid}
+  .modal{
+    width:min(460px,100%);background:var(--surface);border:1px solid var(--stroke);border-radius:22px;
+    padding:28px;box-shadow:var(--shadow);animation:pop .35s cubic-bezier(.2,.9,.3,1.3) both;max-height:88vh;overflow:auto;
+  }
+  @keyframes pop{from{opacity:0;transform:scale(.9) translateY(16px)}to{opacity:1;transform:none}}
+  .modal h3{font-size:1.2rem;margin-bottom:4px}
+  .modal .m-sub{color:var(--text-2);font-size:.88rem;margin-bottom:20px}
+  .modal .m-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:22px}
+
+  /* ============ toasts ============ */
+  #toasts{position:fixed;bottom:22px;right:22px;z-index:200;display:flex;flex-direction:column;gap:10px}
+  .toast{
+    background:var(--surface);border:1px solid var(--stroke);border-left:4px solid var(--accent);
+    border-radius:13px;padding:13px 17px;min-width:260px;box-shadow:var(--shadow);
+    font-size:.9rem;animation:slideIn .35s cubic-bezier(.2,.9,.3,1.2) both;
+  }
+  .toast.good{border-left-color:var(--good)}
+  .toast.bad{border-left-color:var(--bad)}
+  .toast b{display:block;margin-bottom:2px}
+  .toast span{color:var(--text-2);font-size:.82rem}
+  @keyframes slideIn{from{opacity:0;transform:translateX(40px)}to{opacity:1;transform:none}}
+  .toast.out{animation:slideOut .3s both}
+  @keyframes slideOut{to{opacity:0;transform:translateX(40px)}}
+
+  /* ============ divers ============ */
+  .empty{
+    text-align:center;padding:44px 20px;color:var(--text-3);
+  }
+  .empty .e-ico{font-size:2.6rem;margin-bottom:10px}
+  .muted{color:var(--text-3);font-size:.82rem}
+  .mt{margin-top:20px}
+  .pw-note{font-size:.78rem;color:var(--text-3);margin-top:6px}
+  .danger-text{color:var(--bad)}
+  .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
+  .num-anim{transition:none}
+
+  /* responsive */
+  .menu-btn{display:none;background:var(--surface-2);border:1px solid var(--stroke);color:var(--text);border-radius:10px;padding:9px 13px;cursor:pointer;font-size:1rem}
+  @media(max-width:900px){
+    .app{grid-template-columns:1fr}
+    .sidebar{
+      position:fixed;left:0;top:0;bottom:0;width:250px;z-index:90;transform:translateX(-105%);transition:.3s;height:100vh;
+    }
+    .sidebar.open{transform:none;box-shadow:var(--shadow)}
+    .menu-btn{display:inline-flex}
+  }
+  @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+
+<div class="bg-orbs"><div class="orb a"></div><div class="orb b"></div><div class="orb c"></div></div>
+
+<!-- ================= AUTH ================= -->
+<section class="screen" id="screen-auth">
+  <div class="auth-card fade-in">
+    <div class="logo-row">
+      <div class="logo-mark">N</div>
+      <div class="logo-name">Nova<em>Bank</em></div>
+    </div>
+
+    <!-- LOGIN -->
+    <div id="form-login">
+      <div class="auth-title">Bon retour 👋</div>
+      <div class="auth-sub">Connecte-toi pour accéder à ton espace.</div>
+      <div class="field">
+        <label>Email</label>
+        <input type="email" id="li-email" placeholder="toi@exemple.fr" autocomplete="username" />
+      </div>
+      <div class="field">
+        <label>Mot de passe</label>
+        <input type="password" id="li-pass" placeholder="••••••••" autocomplete="current-password" />
+      </div>
+      <button class="btn block" id="btn-login">Se connecter</button>
+      <div class="auth-switch">Pas encore de compte ? <a id="go-signup">Créer un compte</a></div>
+      <div class="demo-hint">
+        🎭 <b>Mode démo</b> — comptes de test :<br />
+        Admin : <code>admin@novabank.fr</code> / <code>Admin123!</code><br />
+        Client : <code>sophie@exemple.fr</code> / <code>Demo123!</code>
+      </div>
+    </div>
+
+    <!-- SIGNUP -->
+    <div id="form-signup" style="display:none">
+      <div class="auth-title">Créer ton compte</div>
+      <div class="auth-sub">Ouverture en 30 secondes, sans paperasse.</div>
+      <div class="row-2">
+        <div class="field">
+          <label>Prénom</label>
+          <input type="text" id="su-prenom" placeholder="Sophie" />
+        </div>
+        <div class="field">
+          <label>Nom</label>
+          <input type="text" id="su-nom" placeholder="Martin" />
+        </div>
+      </div>
+      <div class="field">
+        <label>Email</label>
+        <input type="email" id="su-email" placeholder="toi@exemple.fr" autocomplete="username" />
+      </div>
+      <div class="field">
+        <label>Mot de passe</label>
+        <input type="password" id="su-pass" placeholder="8 caractères minimum" autocomplete="new-password" />
+        <div class="pw-note">Minimum 8 caractères, avec au moins 1 chiffre.</div>
+      </div>
+      <button class="btn block" id="btn-signup">Ouvrir mon compte 🚀</button>
+      <div class="auth-switch">Déjà client ? <a id="go-login">Se connecter</a></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= APP ================= -->
+<section class="screen" id="screen-app">
+  <div class="app">
+    <aside class="sidebar" id="sidebar">
+      <div class="logo-row">
+        <div class="logo-mark">N</div>
+        <div class="logo-name">Nova<em>Bank</em></div>
+      </div>
+      <div id="nav-links"></div>
+      <div class="spacer"></div>
+      <div class="side-user">
+        <div class="avatar" id="side-avatar">?</div>
+        <div class="who">
+          <b id="side-name">—</b>
+          <span id="side-role">—</span>
+        </div>
+      </div>
+      <button class="nav-item" id="btn-logout" style="margin-top:8px"><span class="ico">🚪</span> Déconnexion</button>
+    </aside>
+    <main class="main" id="main-view"><!-- vue injectée --></main>
+  </div>
+</section>
+
+<!-- ================= MODALES ================= -->
+<div class="modal-back" id="modal-back">
+  <div class="modal" id="modal-box"><!-- contenu injecté --></div>
+</div>
+
+<div id="toasts"></div>
+
+<script>
+/* =====================================================
+   NovaBank — démo de gestion de comptes clients
+   Données stockées en localStorage (démonstration).
+   ===================================================== */
+'use strict';
+
+/* ---------- utilitaires ---------- */
+const $ = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
+const eur = n => new Intl.NumberFormat('fr-FR',{style:'currency',currency:'EUR'}).format(n);
+const fmtDate = ts => new Date(ts).toLocaleDateString('fr-FR',{day:'2-digit',month:'short',year:'numeric'});
+const fmtDateTime = ts => new Date(ts).toLocaleDateString('fr-FR',{day:'2-digit',month:'short'}) + ' · ' + new Date(ts).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
+const uid = () => 'id_' + Math.random().toString(36).slice(2,10) + Date.now().toString(36);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+async function hashPass(pass, salt){
+  const data = new TextEncoder().encode(salt + '::' + pass);
+  if (crypto && crypto.subtle) {
+    const buf = await crypto.subtle.digest('SHA-256', data);
+    return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+  }
+  // repli très simple si contexte non sécurisé
+  let h = 0; const str = salt + '::' + pass;
+  for (let i=0;i<str.length;i++){ h = ((h<<5)-h+str.charCodeAt(i))|0; }
+  return 'f' + Math.abs(h).toString(16);
+}
+const genIban = () => {
+  let digits = '';
+  for(let i=0;i<20;i++) digits += Math.floor(Math.random()*10);
+  return 'FR76 ' + digits.replace(/(\d{4})/g,'$1 ').trim();
+};
+
+/* ---------- persistance ---------- */
+const DB = {
+  load(key, def){ try { return JSON.parse(localStorage.getItem(key)) ?? def; } catch(e){ return def; } },
+  save(key, val){ localStorage.setItem(key, JSON.stringify(val)); },
+};
+let users = DB.load('nb_users', []);
+let ledger = DB.load('nb_ledger', []);   // {id,userId,ts,type,label,montant(signed),soldeApres,meta}
+let session = DB.load('nb_session', null);
+const persist = () => { DB.save('nb_users', users); DB.save('nb_ledger', ledger); DB.save('nb_session', session); };
+
+/* ---------- amorçage démo ---------- */
+async function seed(){
+  if (users.length) return;
+  const mk = async (prenom, nom, email, pass, role) => {
+    const salt = uid();
+    return {
+      id: uid(), prenom, nom, email, role,
+      salt, passHash: await hashPass(pass, salt),
+      iban: genIban(), solde: 0, statut: 'actif',
+      createdAt: Date.now() - Math.floor(Math.random()*90+10)*86400000,
+    };
+  };
+  const admin  = await mk('Alex','Moreau','admin@novabank.fr','Admin123!','admin');
+  const c1 = await mk('Sophie','Martin','sophie@exemple.fr','Demo123!','client');
+  const c2 = await mk('Karim','Benali','karim@exemple.fr','Demo123!','client');
+  const c3 = await mk('Léa','Dubois','lea@exemple.fr','Demo123!','client');
+  users = [admin, c1, c2, c3];
+
+  // historique de démonstration
+  const scripts = [
+    [c1, [ ['depot','Prime de bienvenue',500], ['depot','Salaire — Acme SARL',2140], ['paiement','Loyer appartement',-780], ['paiement','Courses — SuperFrais',-96.4], ['depot','Remboursement Alice',45], ['paiement','Abonnement mobile',-19.99], ['depot','Salaire — Acme SARL',2140], ['paiement','Loyer appartement',-780], ['paiement','Restaurant',-58.5] ]],
+    [c2, [ ['depot','Prime de bienvenue',500], ['depot','Virement reçu — freelance',1350], ['paiement','Matériel photo',-420], ['paiement','Essence',-72], ['depot','Virement reçu — freelance',980], ['paiement','Assurance auto',-64.3] ]],
+    [c3, [ ['depot','Prime de bienvenue',500], ['depot','Bourse études',450], ['paiement','Livres',-38], ['paiement','Transport',-25], ['depot','Job étudiant',380], ['paiement','Concert',-49] ]],
+  ];
+  for (const [u, ops] of scripts){
+    let bal = 0;
+    let t = u.createdAt;
+    for (const [type,label,mnt] of ops){
+      bal = Math.round((bal + mnt)*100)/100;
+      t += Math.floor(Math.random()*9+2)*86400000;
+      ledger.push({ id: uid(), userId: u.id, ts: Math.min(t, Date.now()-3600000), type, label, montant: mnt, soldeApres: bal });
+    }
+    u.solde = bal;
+  }
+  persist();
+}
+
+/* ---------- toasts ---------- */
+function toast(titre, msg, kind){
+  const el = document.createElement('div');
+  el.className = 'toast ' + (kind||'');
+  el.innerHTML = '<b>'+esc(titre)+'</b><span>'+esc(msg||'')+'</span>';
+  $('#toasts').appendChild(el);
+  setTimeout(()=>{ el.classList.add('out'); setTimeout(()=>el.remove(), 320); }, 3400);
+}
+
+/* ---------- modales ---------- */
+function openModal(html){ $('#modal-box').innerHTML = html; $('#modal-back').classList.add('open'); }
+function closeModal(){ $('#modal-back').classList.remove('open'); }
+$('#modal-back').addEventListener('click', e => { if (e.target.id === 'modal-back') closeModal(); });
+
+/* ---------- helpers métier ---------- */
+const me = () => users.find(u => u.id === (session && session.userId));
+const clients = () => users.filter(u => u.role === 'client');
+const userLedger = id => ledger.filter(l => l.userId === id).sort((a,b)=>b.ts-a.ts);
+
+function addOp(user, type, label, montant, meta){
+  user.solde = Math.round((user.solde + montant)*100)/100;
+  ledger.push({ id: uid(), userId: user.id, ts: Date.now(), type, label, montant, soldeApres: user.solde, meta: meta||null });
+}
+
+const TX_STYLE = {
+  depot:    { ico:'💰', chip:'ok',   name:'Dépôt' },
+  paiement: { ico:'🛒', chip:'info', name:'Paiement' },
+  virement_in:  { ico:'📥', chip:'ok',  name:'Virement reçu' },
+  virement_out: { ico:'📤', chip:'info',name:'Virement émis' },
+  retrait:  { ico:'🏧', chip:'warn', name:'Retrait' },
+  admin_credit: { ico:'🛠️', chip:'ok', name:'Crédit admin' },
+  admin_debit:  { ico:'🛠️', chip:'ko', name:'Débit admin' },
+};
+const txStyle = t => TX_STYLE[t] || { ico:'💳', chip:'info', name:t };
+
+/* =====================================================
+   NAVIGATION / RENDU
+   ===================================================== */
+let currentView = 'dash';
+
+function show(screenId){
+  $$('.screen').forEach(s=>s.classList.remove('active'));
+  $(screenId).classList.add('active');
+}
+
+function renderNav(){
+  const u = me();
+  const items = u.role === 'admin'
+    ? [ ['dash','📊','Vue d\'ensemble'], ['clients','👥','Clients'], ['ops','🧾','Opérations'], ['profil','⚙️','Mon profil'] ]
+    : [ ['dash','🏠','Tableau de bord'], ['historique','🧾','Historique'], ['profil','⚙️','Mon profil'] ];
+  $('#nav-links').innerHTML = items.map(([id,ico,lbl]) =>
+    `<button class="nav-item ${currentView===id?'active':''}" data-view="${id}"><span class="ico">${ico}</span> ${lbl}</button>`
+  ).join('');
+  $$('#nav-links .nav-item').forEach(b => b.addEventListener('click', () => {
+    currentView = b.dataset.view; renderApp(); $('#sidebar').classList.remove('open');
+  }));
+  $('#side-avatar').textContent = (u.prenom[0]||'') + (u.nom[0]||'');
+  $('#side-name').textContent = u.prenom + ' ' + u.nom;
+  $('#side-role').textContent = u.role === 'admin' ? 'Administrateur' : 'Client';
+}
+
+function renderApp(){
+  const u = me();
+  if (!u){ session=null; persist(); show('#screen-auth'); return; }
+  show('#screen-app'); renderNav();
+  const view = $('#main-view');
+  if (u.role === 'admin'){
+    if (currentView === 'clients') return renderAdminClients(view);
+    if (currentView === 'ops') return renderAdminOps(view);
+    if (currentView === 'profil') return renderProfil(view);
+    return renderAdminDash(view);
+  } else {
+    if (currentView === 'historique') return renderHistorique(view);
+    if (currentView === 'profil') return renderProfil(view);
+    return renderClientDash(view);
+  }
+}
+
+/* ---------- animation compteur ---------- */
+function animateNum(el, target, format){
+  const dur = 800, t0 = performance.now();
+  const step = now => {
+    const p = Math.min(1,(now-t0)/dur), e = 1-Math.pow(1-p,3);
+    el.textContent = format(target*e);
+    if (p<1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+/* =====================================================
+   VUE CLIENT
+   ===================================================== */
+function renderClientDash(view){
+  const u = me();
+  const lg = userLedger(u.id);
+  const inMonth = lg.filter(l => l.montant>0 && Date.now()-l.ts < 30*86400000).reduce((s,l)=>s+l.montant,0);
+  const outMonth = lg.filter(l => l.montant<0 && Date.now()-l.ts < 30*86400000).reduce((s,l)=>s-l.montant,0);
+
+  view.innerHTML = `
+    <div class="topbar fade-in">
+      <div>
+        <button class="menu-btn" id="mn">☰</button>
+        <h1 style="display:inline-block;vertical-align:middle">Bonjour, ${esc(u.prenom)} 👋</h1>
+        <div class="sub">Voici l'état de ton compte aujourd'hui.</div>
+      </div>
+    </div>
+
+    ${u.statut==='bloqué' ? `<div class="card fade-in" style="border-color:rgba(248,113,113,.5);margin-bottom:20px"><b class="danger-text">⚠️ Compte suspendu</b><div class="muted mt" style="margin-top:6px">Ton compte est temporairement bloqué. Contacte le support NovaBank.</div></div>` : ''}
+
+    <div class="balance-hero fade-in">
+      <div class="bh-label">Solde disponible</div>
+      <div class="bh-amount" id="bal-num">${eur(0)}</div>
+      <div class="bh-iban">${esc(u.iban)}</div>
+      <div class="bh-actions">
+        <button class="btn small" id="act-virement" ${u.statut==='bloqué'?'disabled':''}>📤 Faire un virement</button>
+        <button class="btn small neutral" id="act-depot" ${u.statut==='bloqué'?'disabled':''}>💰 Déposer</button>
+        <button class="btn small neutral" id="act-retrait" ${u.statut==='bloqué'?'disabled':''}>🏧 Retirer</button>
+      </div>
+    </div>
+
+    <div class="grid cols-3 mt fade-in">
+      <div class="card tile"><div class="t-label">📥 Entrées (30 j)</div><div class="t-value" style="color:var(--good)">+${eur(inMonth).replace(/ €/,' €')}</div><div class="t-delta">revenus et virements reçus</div></div>
+      <div class="card tile"><div class="t-label">📤 Sorties (30 j)</div><div class="t-value" style="color:var(--bad)">−${eur(outMonth).replace(/ €/,' €')}</div><div class="t-delta">paiements et virements émis</div></div>
+      <div class="card tile"><div class="t-label">🧾 Opérations</div><div class="t-value">${lg.length}</div><div class="t-delta">depuis l'ouverture</div></div>
+    </div>
+
+    <div class="card mt fade-in">
+      <div class="card-head">
+        <h3>Évolution du solde</h3>
+        <span class="hint">90 derniers jours</span>
+      </div>
+      <div class="viz-root" id="viz">
+        <canvas id="chart"></canvas>
+        <div class="viz-tip" id="viz-tip"></div>
+      </div>
+    </div>
+
+    <div class="card mt fade-in">
+      <div class="card-head">
+        <h3>Dernières opérations</h3>
+        <button class="btn small ghost" id="see-all">Tout voir →</button>
+      </div>
+      ${renderTxTable(lg.slice(0,5))}
+    </div>
+  `;
+  $('#mn') && $('#mn').addEventListener('click',()=>$('#sidebar').classList.toggle('open'));
+  animateNum($('#bal-num'), u.solde, v=>eur(v));
+  $('#see-all').addEventListener('click', ()=>{ currentView='historique'; renderApp(); });
+  $('#act-virement') && $('#act-virement').addEventListener('click', modalVirement);
+  $('#act-depot') && $('#act-depot').addEventListener('click', ()=>modalMouvement('depot'));
+  $('#act-retrait') && $('#act-retrait').addEventListener('click', ()=>modalMouvement('retrait'));
+  drawChart(u);
+}
+
+function renderTxTable(list){
+  if (!list.length) return `<div class="empty"><div class="e-ico">🗒️</div>Aucune opération pour le moment.</div>`;
+  return `<div class="tbl-wrap"><table>
+    <thead><tr><th>Opération</th><th>Type</th><th>Date</th><th style="text-align:right">Montant</th><th style="text-align:right">Solde</th></tr></thead>
+    <tbody>${list.map(l=>{
+      const st = txStyle(l.type);
+      return `<tr>
+        <td><div class="cell-flex"><div class="tx-ico">${st.ico}</div><div class="lbl"><b>${esc(l.label)}</b><span>${l.meta?esc(l.meta):''}</span></div></div></td>
+        <td><span class="chip ${st.chip}">${st.name}</span></td>
+        <td class="muted">${fmtDateTime(l.ts)}</td>
+        <td style="text-align:right" class="amount ${l.montant>=0?'pos':'neg'}">${l.montant>=0?'+':''}${eur(l.montant)}</td>
+        <td style="text-align:right" class="amount">${eur(l.soldeApres)}</td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table></div>`;
+}
+
+function renderHistorique(view){
+  const u = me();
+  view.innerHTML = `
+    <div class="topbar fade-in">
+      <div>
+        <button class="menu-btn" id="mn">☰</button>
+        <h1 style="display:inline-block;vertical-align:middle">Historique</h1>
+        <div class="sub">Toutes tes opérations, filtrables.</div>
+      </div>
+      <div class="filters">
+        <div class="search">🔎 <input id="hx-q" placeholder="Rechercher…" /></div>
+        <div class="seg" id="hx-seg">
+          <button data-f="all" class="active">Tout</button>
+          <button data-f="in">Entrées</button>
+          <button data-f="out">Sorties</button>
+        </div>
+      </div>
+    </div>
+    <div class="card fade-in" id="hx-table"></div>
+  `;
+  $('#mn') && $('#mn').addEventListener('click',()=>$('#sidebar').classList.toggle('open'));
+  let f='all', q='';
+  const upd = () => {
+    let list = userLedger(u.id);
+    if (f==='in') list = list.filter(l=>l.montant>0);
+    if (f==='out') list = list.filter(l=>l.montant<0);
+    if (q) list = list.filter(l => (l.label+' '+(l.meta||'')).toLowerCase().includes(q));
+    $('#hx-table').innerHTML = renderTxTable(list);
+  };
+  $('#hx-q').addEventListener('input', e=>{ q=e.target.value.toLowerCase(); upd(); });
+  $$('#hx-seg button').forEach(b=>b.addEventListener('click',()=>{
+    $$('#hx-seg button').forEach(x=>x.classList.remove('active')); b.classList.add('active'); f=b.dataset.f; upd();
+  }));
+  upd();
+}
+
+/* ---------- graphique solde (série unique, tooltip au survol) ---------- */
+function balanceSeries(u, days){
+  const from = Date.now() - days*86400000;
+  const list = ledger.filter(l=>l.userId===u.id).sort((a,b)=>a.ts-b.ts);
+  const pts = [];
+  let bal = 0;
+  for (const l of list){
+    bal = l.soldeApres;
+    if (l.ts >= from) pts.push({ ts:l.ts, v:l.soldeApres });
+  }
+  const before = list.filter(l=>l.ts<from);
+  const start = before.length ? before[before.length-1].soldeApres : 0;
+  pts.unshift({ ts: from, v: start });
+  pts.push({ ts: Date.now(), v: u.solde });
+  return pts;
+}
+
+function drawChart(u){
+  const cv = $('#chart'); if (!cv) return;
+  const tip = $('#viz-tip');
+  const dpr = window.devicePixelRatio || 1;
+  const W = cv.offsetWidth, H = 240;
+  cv.width = W*dpr; cv.height = H*dpr;
+  const ctx = cv.getContext('2d'); ctx.scale(dpr,dpr);
+
+  const pts = balanceSeries(u, 90);
+  const PAD = { l:56, r:12, t:14, b:26 };
+  const xs = pts.map(p=>p.ts), ys = pts.map(p=>p.v);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs);
+  let y0 = Math.min(0, ...ys), y1 = Math.max(10, ...ys);
+  const span = y1-y0 || 1; y1 += span*.12; y0 -= span*.06;
+  const X = t => PAD.l + (t-x0)/(x1-x0 || 1) * (W-PAD.l-PAD.r);
+  const Y = v => PAD.t + (1-(v-y0)/(y1-y0)) * (H-PAD.t-PAD.b);
+
+  ctx.clearRect(0,0,W,H);
+  // grille horizontale discrète + repères
+  ctx.strokeStyle = 'rgba(255,255,255,.06)'; ctx.lineWidth = 1;
+  ctx.fillStyle = 'rgba(154,165,189,.8)'; ctx.font = '11px system-ui'; ctx.textAlign='right';
+  const steps = 4;
+  for (let i=0;i<=steps;i++){
+    const v = y0 + (y1-y0)*i/steps, y = Y(v);
+    ctx.beginPath(); ctx.moveTo(PAD.l,y); ctx.lineTo(W-PAD.r,y); ctx.stroke();
+    ctx.fillText(Math.round(v).toLocaleString('fr-FR')+' €', PAD.l-8, y+4);
+  }
+  // dates min/max
+  ctx.textAlign='left';  ctx.fillText(fmtDate(x0), PAD.l, H-8);
+  ctx.textAlign='right'; ctx.fillText(fmtDate(x1), W-PAD.r, H-8);
+
+  // aire + ligne (marches: le solde est constant entre opérations)
+  const col = getComputedStyle(document.documentElement).getPropertyValue('--series-1').trim() || '#3987e5';
+  const path = new Path2D();
+  pts.forEach((p,i)=>{
+    const x=X(p.ts), y=Y(p.v);
+    if (i===0) path.moveTo(x,y);
+    else { path.lineTo(x, Y(pts[i-1].v)); path.lineTo(x,y); }
+  });
+  const area = new Path2D(path);
+  area.lineTo(X(x1), Y(y0)); area.lineTo(X(x0), Y(y0)); area.closePath();
+  const grad = ctx.createLinearGradient(0,PAD.t,0,H);
+  grad.addColorStop(0, col+'55'); grad.addColorStop(1, col+'00');
+  ctx.fillStyle = grad; ctx.fill(area);
+  ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.lineJoin='round'; ctx.stroke(path);
+
+  // interaction : crosshair + tooltip
+  cv.onmousemove = e => {
+    const r = cv.getBoundingClientRect();
+    const mx = e.clientX - r.left;
+    let best = pts[0], bd = Infinity;
+    for (const p of pts){ const d = Math.abs(X(p.ts)-mx); if (d<bd){ bd=d; best=p; } }
+    // valeur du solde à cet instant (dernier point <= souris)
+    const t = x0 + (mx-PAD.l)/((W-PAD.l-PAD.r)||1)*(x1-x0);
+    let cur = pts[0];
+    for (const p of pts){ if (p.ts<=t) cur = p; }
+    // redraw + crosshair
+    drawChart._raf && cancelAnimationFrame(drawChart._raf);
+    drawChart._raf = requestAnimationFrame(()=>{
+      drawChartStatic(u); // fond
+      const c2 = cv.getContext('2d');
+      const xx = Math.max(PAD.l, Math.min(W-PAD.r, mx));
+      c2.save(); c2.scale(1,1);
+      c2.strokeStyle='rgba(255,255,255,.25)'; c2.setLineDash([4,4]); c2.lineWidth=1;
+      c2.beginPath(); c2.moveTo(xx*dpr/dpr,PAD.t); c2.lineTo(xx,H-PAD.b); c2.stroke(); c2.setLineDash([]);
+      c2.fillStyle=col; c2.strokeStyle='#0b0e17';
+      c2.beginPath(); c2.arc(xx, Y(cur.v), 5, 0, 7); c2.fill(); c2.lineWidth=2; c2.stroke();
+      c2.restore();
+    });
+    tip.style.left = Math.max(70, Math.min(W-70, mx)) + 'px';
+    tip.style.top = (Y(cur.v)) + 'px';
+    tip.style.opacity = 1;
+    tip.innerHTML = '<b>'+eur(cur.v)+'</b><span>'+fmtDate(Math.min(t,Date.now()))+'</span>';
+  };
+  cv.onmouseleave = () => { tip.style.opacity = 0; drawChartStatic(u); };
+
+  // version statique réutilisable pour le redraw du crosshair
+  drawChartStatic = user => {
+    const c = cv.getContext('2d');
+    c.setTransform(dpr,0,0,dpr,0,0);
+    c.clearRect(0,0,W,H);
+    c.strokeStyle='rgba(255,255,255,.06)'; c.lineWidth=1;
+    c.fillStyle='rgba(154,165,189,.8)'; c.font='11px system-ui'; c.textAlign='right';
+    for (let i=0;i<=steps;i++){
+      const v=y0+(y1-y0)*i/steps, y=Y(v);
+      c.beginPath(); c.moveTo(PAD.l,y); c.lineTo(W-PAD.r,y); c.stroke();
+      c.fillText(Math.round(v).toLocaleString('fr-FR')+' €', PAD.l-8, y+4);
+    }
+    c.textAlign='left'; c.fillText(fmtDate(x0), PAD.l, H-8);
+    c.textAlign='right'; c.fillText(fmtDate(x1), W-PAD.r, H-8);
+    c.fillStyle=grad; c.fill(area);
+    c.strokeStyle=col; c.lineWidth=2; c.stroke(path);
+  };
+}
+let drawChartStatic = () => {};
+
+/* ---------- modales client ---------- */
+function modalVirement(){
+  const u = me();
+  openModal(`
+    <h3>📤 Faire un virement</h3>
+    <div class="m-sub">Envoie de l'argent à un autre client NovaBank.</div>
+    <div class="field"><label>Email du bénéficiaire</label><input id="v-dest" type="email" placeholder="destinataire@exemple.fr" /></div>
+    <div class="field"><label>Montant (€)</label><input id="v-mnt" type="number" min="0.01" step="0.01" placeholder="50.00" /></div>
+    <div class="field"><label>Motif (optionnel)</label><input id="v-note" type="text" placeholder="Remboursement resto…" /></div>
+    <div class="muted">Solde disponible : <b>${eur(u.solde)}</b></div>
+    <div class="m-actions">
+      <button class="btn ghost" onclick="closeModal()">Annuler</button>
+      <button class="btn" id="v-go">Envoyer</button>
+    </div>
+  `);
+  $('#v-go').addEventListener('click', () => {
+    const email = $('#v-dest').value.trim().toLowerCase();
+    const mnt = Math.round(parseFloat($('#v-mnt').value)*100)/100;
+    const note = $('#v-note').value.trim();
+    const dest = users.find(x=>x.email===email && x.role==='client');
+    if (!dest) return toast('Bénéficiaire introuvable','Aucun client avec cet email.','bad');
+    if (dest.id===u.id) return toast('Virement impossible','Tu ne peux pas te virer de l\'argent à toi-même.','bad');
+    if (dest.statut==='bloqué') return toast('Compte bloqué','Le compte du bénéficiaire est suspendu.','bad');
+    if (!(mnt>0)) return toast('Montant invalide','Saisis un montant supérieur à 0.','bad');
+    if (mnt>u.solde) return toast('Solde insuffisant','Ton solde ne couvre pas ce montant.','bad');
+    addOp(u,'virement_out','Virement vers '+dest.prenom+' '+dest.nom, -mnt, note||null);
+    addOp(dest,'virement_in','Virement de '+u.prenom+' '+u.nom, mnt, note||null);
+    persist(); closeModal(); renderApp();
+    toast('Virement envoyé ✅', eur(mnt)+' → '+dest.prenom+' '+dest.nom,'good');
+  });
+}
+
+function modalMouvement(kind){
+  const u = me();
+  const conf = kind==='depot'
+    ? { titre:'💰 Déposer de l\'argent', sub:'Alimente ton compte (démo).', btn:'Déposer', type:'depot', label:'Dépôt sur le compte', sign:1 }
+    : { titre:'🏧 Retirer de l\'argent', sub:'Retrait en espèces (démo).', btn:'Retirer', type:'retrait', label:'Retrait distributeur', sign:-1 };
+  openModal(`
+    <h3>${conf.titre}</h3>
+    <div class="m-sub">${conf.sub}</div>
+    <div class="field"><label>Montant (€)</label><input id="m-mnt" type="number" min="0.01" step="0.01" placeholder="100.00" /></div>
+    <div class="muted">Solde actuel : <b>${eur(u.solde)}</b></div>
+    <div class="m-actions">
+      <button class="btn ghost" onclick="closeModal()">Annuler</button>
+      <button class="btn" id="m-go">${conf.btn}</button>
+    </div>
+  `);
+  $('#m-go').addEventListener('click', () => {
+    const mnt = Math.round(parseFloat($('#m-mnt').value)*100)/100;
+    if (!(mnt>0)) return toast('Montant invalide','Saisis un montant supérieur à 0.','bad');
+    if (conf.sign<0 && mnt>u.solde) return toast('Solde insuffisant','Ton solde ne couvre pas ce retrait.','bad');
+    addOp(u, conf.type, conf.label, conf.sign*mnt);
+    persist(); closeModal(); renderApp();
+    toast(kind==='depot'?'Dépôt effectué ✅':'Retrait effectué ✅', eur(mnt),'good');
+  });
+}
+
+/* =====================================================
+   VUE ADMIN
+   ===================================================== */
+function renderAdminDash(view){
+  const cl = clients();
+  const total = cl.reduce((s,c)=>s+c.solde,0);
+  const today = ledger.filter(l=>Date.now()-l.ts<86400000).length;
+  const bloques = cl.filter(c=>c.statut==='bloqué').length;
+  view.innerHTML = `
+    <div class="topbar fade-in">
+      <div>
+        <button class="menu-btn" id="mn">☰</button>
+        <h1 style="display:inline-block;vertical-align:middle">Vue d'ensemble</h1>
+        <div class="sub">Pilotage de la banque en un coup d'œil.</div>
+      </div>
+      <button class="btn" id="new-client">＋ Nouveau client</button>
+    </div>
+    <div class="grid cols-3 fade-in">
+      <div class="card tile"><div class="t-label">👥 Clients</div><div class="t-value" id="st-cl">0</div><div class="t-delta">${bloques?bloques+' bloqué'+(bloques>1?'s':''):'tous actifs'}</div></div>
+      <div class="card tile"><div class="t-label">💶 Encours total</div><div class="t-value" id="st-total">0</div><div class="t-delta">somme des soldes clients</div></div>
+      <div class="card tile"><div class="t-label">🧾 Opérations (24 h)</div><div class="t-value" id="st-ops">0</div><div class="t-delta">${ledger.length} au total</div></div>
+    </div>
+    <div class="card mt fade-in">
+      <div class="card-head"><h3>Dernières opérations (tous clients)</h3><button class="btn small ghost" id="see-ops">Tout voir →</button></div>
+      ${renderAdminTxTable(ledger.slice().sort((a,b)=>b.ts-a.ts).slice(0,6))}
+    </div>
+  `;
+  $('#mn') && $('#mn').addEventListener('click',()=>$('#sidebar').classList.toggle('open'));
+  animateNum($('#st-cl'), cl.length, v=>Math.round(v));
+  animateNum($('#st-total'), total, v=>eur(v));
+  animateNum($('#st-ops'), today, v=>Math.round(v));
+  $('#new-client').addEventListener('click', modalNewClient);
+  $('#see-ops').addEventListener('click', ()=>{ currentView='ops'; renderApp(); });
+}
+
+function renderAdminTxTable(list){
+  if (!list.length) return `<div class="empty"><div class="e-ico">🗒️</div>Aucune opération.</div>`;
+  return `<div class="tbl-wrap"><table>
+    <thead><tr><th>Client</th><th>Opération</th><th>Date</th><th style="text-align:right">Montant</th></tr></thead>
+    <tbody>${list.map(l=>{
+      const u = users.find(x=>x.id===l.userId) || {prenom:'?',nom:''};
+      const st = txStyle(l.type);
+      return `<tr>
+        <td><div class="cell-flex"><div class="avatar" style="width:32px;height:32px;font-size:.8rem">${esc((u.prenom[0]||'')+(u.nom[0]||''))}</div><div class="lbl"><b>${esc(u.prenom+' '+u.nom)}</b></div></div></td>
+        <td><div class="cell-flex"><div class="tx-ico">${st.ico}</div><div class="lbl"><b>${esc(l.label)}</b><span><span class="chip ${st.chip}" style="margin-top:2px">${st.name}</span></span></div></div></td>
+        <td class="muted">${fmtDateTime(l.ts)}</td>
+        <td style="text-align:right" class="amount ${l.montant>=0?'pos':'neg'}">${l.montant>=0?'+':''}${eur(l.montant)}</td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table></div>`;
+}
+
+function renderAdminClients(view){
+  view.innerHTML = `
+    <div class="topbar fade-in">
+      <div>
+        <button class="menu-btn" id="mn">☰</button>
+        <h1 style="display:inline-block;vertical-align:middle">Clients</h1>
+        <div class="sub">Créer, créditer, bloquer, gérer.</div>
+      </div>
+      <div class="filters">
+        <div class="search">🔎 <input id="cl-q" placeholder="Nom, email…" /></div>
+        <button class="btn" id="new-client">＋ Nouveau client</button>
+      </div>
+    </div>
+    <div class="card fade-in" id="cl-table"></div>
+  `;
+  $('#mn') && $('#mn').addEventListener('click',()=>$('#sidebar').classList.toggle('open'));
+  let q='';
+  const upd = () => {
+    let list = clients().sort((a,b)=>b.createdAt-a.createdAt);
+    if (q) list = list.filter(c => (c.prenom+' '+c.nom+' '+c.email).toLowerCase().includes(q));
+    $('#cl-table').innerHTML = !list.length
+      ? `<div class="empty"><div class="e-ico">👥</div>Aucun client trouvé.</div>`
+      : `<div class="tbl-wrap"><table>
+        <thead><tr><th>Client</th><th>IBAN</th><th>Statut</th><th style="text-align:right">Solde</th><th style="text-align:right">Actions</th></tr></thead>
+        <tbody>${list.map(c=>`
+          <tr>
+            <td><div class="cell-flex"><div class="avatar" style="width:34px;height:34px;font-size:.82rem">${esc(c.prenom[0]+c.nom[0])}</div><div class="lbl"><b>${esc(c.prenom+' '+c.nom)}</b><span>${esc(c.email)}</span></div></div></td>
+            <td class="mono muted" style="font-size:.78rem">${esc(c.iban)}</td>
+            <td>${c.statut==='actif'?'<span class="chip ok">● Actif</span>':'<span class="chip ko">● Bloqué</span>'}</td>
+            <td style="text-align:right" class="amount">${eur(c.solde)}</td>
+            <td style="text-align:right;white-space:nowrap">
+              <button class="btn small neutral" data-act="voir" data-id="${c.id}">👁️</button>
+              <button class="btn small neutral" data-act="mouv" data-id="${c.id}">💶</button>
+              <button class="btn small neutral" data-act="lock" data-id="${c.id}">${c.statut==='actif'?'🔒':'🔓'}</button>
+              <button class="btn small danger" data-act="del" data-id="${c.id}">🗑️</button>
+            </td>
+          </tr>`).join('')}</tbody>
+      </table></div>`;
+    $$('#cl-table [data-act]').forEach(b=>b.addEventListener('click',()=>{
+      const c = users.find(x=>x.id===b.dataset.id); if (!c) return;
+      const act = b.dataset.act;
+      if (act==='voir') return modalClientDetail(c);
+      if (act==='mouv') return modalAdminMouvement(c);
+      if (act==='lock'){
+        c.statut = c.statut==='actif' ? 'bloqué' : 'actif';
+        persist(); upd();
+        return toast(c.statut==='bloqué'?'Compte bloqué 🔒':'Compte réactivé 🔓', c.prenom+' '+c.nom, c.statut==='bloqué'?'bad':'good');
+      }
+      if (act==='del') return modalConfirmDelete(c, upd);
+    }));
+  };
+  $('#cl-q').addEventListener('input', e=>{ q=e.target.value.toLowerCase(); upd(); });
+  $('#new-client').addEventListener('click', modalNewClient);
+  upd();
+}
+
+function renderAdminOps(view){
+  view.innerHTML = `
+    <div class="topbar fade-in">
+      <div>
+        <button class="menu-btn" id="mn">☰</button>
+        <h1 style="display:inline-block;vertical-align:middle">Opérations</h1>
+        <div class="sub">Journal complet, tous clients confondus.</div>
+      </div>
+      <div class="filters"><div class="search">🔎 <input id="op-q" placeholder="Client, libellé…" /></div></div>
+    </div>
+    <div class="card fade-in" id="op-table"></div>
+  `;
+  $('#mn') && $('#mn').addEventListener('click',()=>$('#sidebar').classList.toggle('open'));
+  let q='';
+  const upd = () => {
+    let list = ledger.slice().sort((a,b)=>b.ts-a.ts);
+    if (q) list = list.filter(l=>{
+      const u = users.find(x=>x.id===l.userId) || {prenom:'',nom:'',email:''};
+      return (l.label+' '+u.prenom+' '+u.nom+' '+u.email).toLowerCase().includes(q);
+    });
+    $('#op-table').innerHTML = renderAdminTxTable(list.slice(0,60));
+  };
+  $('#op-q').addEventListener('input', e=>{ q=e.target.value.toLowerCase(); upd(); });
+  upd();
+}
+
+/* ---------- modales admin ---------- */
+function modalNewClient(){
+  openModal(`
+    <h3>＋ Nouveau client</h3>
+    <div class="m-sub">Crée un compte au nom d'un client.</div>
+    <div class="row-2">
+      <div class="field"><label>Prénom</label><input id="nc-prenom" /></div>
+      <div class="field"><label>Nom</label><input id="nc-nom" /></div>
+    </div>
+    <div class="field"><label>Email</label><input id="nc-email" type="email" /></div>
+    <div class="field"><label>Mot de passe provisoire</label><input id="nc-pass" type="text" value="Nova123!" /></div>
+    <div class="field"><label>Solde initial (€)</label><input id="nc-solde" type="number" value="0" min="0" step="0.01" /></div>
+    <div class="m-actions">
+      <button class="btn ghost" onclick="closeModal()">Annuler</button>
+      <button class="btn" id="nc-go">Créer le compte</button>
+    </div>
+  `);
+  $('#nc-go').addEventListener('click', async () => {
+    const prenom = $('#nc-prenom').value.trim(), nom = $('#nc-nom').value.trim();
+    const email = $('#nc-email').value.trim().toLowerCase();
+    const pass = $('#nc-pass').value;
+    const solde = Math.round((parseFloat($('#nc-solde').value)||0)*100)/100;
+    if (!prenom || !nom) return toast('Champs manquants','Prénom et nom obligatoires.','bad');
+    if (!/^\S+@\S+\.\S+$/.test(email)) return toast('Email invalide','Vérifie l\'adresse saisie.','bad');
+    if (users.some(x=>x.email===email)) return toast('Email déjà utilisé','Un compte existe avec cet email.','bad');
+    if (pass.length<8) return toast('Mot de passe trop court','8 caractères minimum.','bad');
+    const salt = uid();
+    const c = { id:uid(), prenom, nom, email, role:'client', salt, passHash:await hashPass(pass,salt), iban:genIban(), solde:0, statut:'actif', createdAt:Date.now() };
+    users.push(c);
+    if (solde>0) addOp(c,'depot','Dépôt d\'ouverture', solde);
+    persist(); closeModal(); renderApp();
+    toast('Client créé ✅', prenom+' '+nom+' · '+email,'good');
+  });
+}
+
+function modalAdminMouvement(c){
+  openModal(`
+    <h3>💶 Créditer / débiter</h3>
+    <div class="m-sub">${esc(c.prenom+' '+c.nom)} — solde actuel : <b>${eur(c.solde)}</b></div>
+    <div class="field"><label>Opération</label>
+      <select id="am-type"><option value="credit">Créditer (+)</option><option value="debit">Débiter (−)</option></select>
+    </div>
+    <div class="field"><label>Montant (€)</label><input id="am-mnt" type="number" min="0.01" step="0.01" placeholder="100.00" /></div>
+    <div class="field"><label>Motif</label><input id="am-note" placeholder="Geste commercial, régularisation…" /></div>
+    <div class="m-actions">
+      <button class="btn ghost" onclick="closeModal()">Annuler</button>
+      <button class="btn" id="am-go">Valider</button>
+    </div>
+  `);
+  $('#am-go').addEventListener('click', () => {
+    const kind = $('#am-type').value;
+    const mnt = Math.round(parseFloat($('#am-mnt').value)*100)/100;
+    const note = $('#am-note').value.trim() || (kind==='credit'?'Crédit par l\'administrateur':'Débit par l\'administrateur');
+    if (!(mnt>0)) return toast('Montant invalide','Saisis un montant supérieur à 0.','bad');
+    if (kind==='debit' && mnt>c.solde) return toast('Solde insuffisant','Le débit dépasse le solde du client.','bad');
+    addOp(c, kind==='credit'?'admin_credit':'admin_debit', note, kind==='credit'?mnt:-mnt, 'par '+me().prenom);
+    persist(); closeModal(); renderApp();
+    toast('Opération enregistrée ✅', (kind==='credit'?'+':'−')+eur(mnt)+' pour '+c.prenom,'good');
+  });
+}
+
+function modalClientDetail(c){
+  const lg = userLedger(c.id);
+  openModal(`
+    <h3>👁️ ${esc(c.prenom+' '+c.nom)}</h3>
+    <div class="m-sub">${esc(c.email)} · client depuis le ${fmtDate(c.createdAt)}</div>
+    <div class="grid cols-2" style="gap:12px">
+      <div class="card" style="padding:16px"><div class="t-label" style="font-size:.72rem">Solde</div><div style="font-size:1.3rem;font-weight:800">${eur(c.solde)}</div></div>
+      <div class="card" style="padding:16px"><div class="t-label" style="font-size:.72rem">Statut</div><div style="margin-top:6px">${c.statut==='actif'?'<span class="chip ok">● Actif</span>':'<span class="chip ko">● Bloqué</span>'}</div></div>
+    </div>
+    <div class="muted mt mono" style="font-size:.78rem">${esc(c.iban)}</div>
+    <div class="mt" style="max-height:240px;overflow:auto">${renderTxTable(lg.slice(0,10))}</div>
+    <div class="m-actions"><button class="btn ghost" onclick="closeModal()">Fermer</button></div>
+  `);
+}
+
+function modalConfirmDelete(c, done){
+  openModal(`
+    <h3 class="danger-text">🗑️ Supprimer ce client ?</h3>
+    <div class="m-sub">${esc(c.prenom+' '+c.nom)} (${esc(c.email)}) et tout son historique seront définitivement supprimés.</div>
+    <div class="m-actions">
+      <button class="btn ghost" onclick="closeModal()">Annuler</button>
+      <button class="btn danger" id="cd-go">Supprimer définitivement</button>
+    </div>
+  `);
+  $('#cd-go').addEventListener('click', () => {
+    users = users.filter(x=>x.id!==c.id);
+    ledger = ledger.filter(l=>l.userId!==c.id);
+    persist(); closeModal(); done ? done() : renderApp();
+    toast('Client supprimé', c.prenom+' '+c.nom,'bad');
+  });
+}
+
+/* =====================================================
+   PROFIL (commun)
+   ===================================================== */
+function renderProfil(view){
+  const u = me();
+  view.innerHTML = `
+    <div class="topbar fade-in">
+      <div>
+        <button class="menu-btn" id="mn">☰</button>
+        <h1 style="display:inline-block;vertical-align:middle">Mon profil</h1>
+        <div class="sub">Tes informations et ta sécurité.</div>
+      </div>
+    </div>
+    <div class="grid cols-2 fade-in">
+      <div class="card">
+        <div class="card-head"><h3>Informations</h3></div>
+        <div class="field"><label>Prénom</label><input id="pf-prenom" value="${esc(u.prenom)}" /></div>
+        <div class="field"><label>Nom</label><input id="pf-nom" value="${esc(u.nom)}" /></div>
+        <div class="field"><label>Email</label><input value="${esc(u.email)}" disabled style="opacity:.6" /></div>
+        ${u.role==='client' ? `<div class="field"><label>IBAN</label><input class="mono" value="${esc(u.iban)}" disabled style="opacity:.6;font-size:.85rem" /></div>` : ''}
+        <button class="btn" id="pf-save">Enregistrer</button>
+      </div>
+      <div class="card">
+        <div class="card-head"><h3>Changer le mot de passe</h3></div>
+        <div class="field"><label>Mot de passe actuel</label><input id="pw-old" type="password" autocomplete="current-password" /></div>
+        <div class="field"><label>Nouveau mot de passe</label><input id="pw-new" type="password" autocomplete="new-password" /><div class="pw-note">Minimum 8 caractères, avec au moins 1 chiffre.</div></div>
+        <button class="btn" id="pw-save">Mettre à jour</button>
+        <div class="muted mt">Compte créé le ${fmtDate(u.createdAt)}.</div>
+      </div>
+    </div>
+  `;
+  $('#mn') && $('#mn').addEventListener('click',()=>$('#sidebar').classList.toggle('open'));
+  $('#pf-save').addEventListener('click', () => {
+    const p = $('#pf-prenom').value.trim(), n = $('#pf-nom').value.trim();
+    if (!p || !n) return toast('Champs manquants','Prénom et nom obligatoires.','bad');
+    u.prenom = p; u.nom = n; persist(); renderNav();
+    toast('Profil mis à jour ✅','','good');
+  });
+  $('#pw-save').addEventListener('click', async () => {
+    const oldp = $('#pw-old').value, newp = $('#pw-new').value;
+    if (await hashPass(oldp, u.salt) !== u.passHash) return toast('Mot de passe actuel incorrect','','bad');
+    if (newp.length<8 || !/\d/.test(newp)) return toast('Nouveau mot de passe trop faible','8 caractères min. et 1 chiffre.','bad');
+    u.salt = uid(); u.passHash = await hashPass(newp, u.salt); persist();
+    $('#pw-old').value=''; $('#pw-new').value='';
+    toast('Mot de passe modifié ✅','','good');
+  });
+}
+
+/* =====================================================
+   AUTH
+   ===================================================== */
+$('#go-signup').addEventListener('click', ()=>{ $('#form-login').style.display='none'; $('#form-signup').style.display='block'; });
+$('#go-login').addEventListener('click', ()=>{ $('#form-signup').style.display='none'; $('#form-login').style.display='block'; });
+
+$('#btn-login').addEventListener('click', doLogin);
+$('#li-pass').addEventListener('keydown', e=>{ if (e.key==='Enter') doLogin(); });
+async function doLogin(){
+  const email = $('#li-email').value.trim().toLowerCase();
+  const pass = $('#li-pass').value;
+  const u = users.find(x=>x.email===email);
+  if (!u || await hashPass(pass, u.salt) !== u.passHash)
+    return toast('Connexion refusée','Email ou mot de passe incorrect.','bad');
+  session = { userId: u.id, ts: Date.now() }; persist();
+  currentView = 'dash'; renderApp();
+  toast('Bienvenue '+u.prenom+' 👋','Connexion réussie.','good');
+}
+
+$('#btn-signup').addEventListener('click', async () => {
+  const prenom = $('#su-prenom').value.trim(), nom = $('#su-nom').value.trim();
+  const email = $('#su-email').value.trim().toLowerCase();
+  const pass = $('#su-pass').value;
+  if (!prenom || !nom) return toast('Champs manquants','Prénom et nom obligatoires.','bad');
+  if (!/^\S+@\S+\.\S+$/.test(email)) return toast('Email invalide','Vérifie l\'adresse saisie.','bad');
+  if (users.some(x=>x.email===email)) return toast('Email déjà utilisé','Connecte-toi plutôt.','bad');
+  if (pass.length<8 || !/\d/.test(pass)) return toast('Mot de passe trop faible','8 caractères min. et 1 chiffre.','bad');
+  const salt = uid();
+  const u = { id:uid(), prenom, nom, email, role:'client', salt, passHash:await hashPass(pass,salt), iban:genIban(), solde:0, statut:'actif', createdAt:Date.now() };
+  users.push(u);
+  addOp(u,'depot','Prime de bienvenue 🎁', 100);
+  session = { userId:u.id, ts:Date.now() }; persist();
+  currentView='dash'; renderApp();
+  toast('Compte créé 🎉','100 € de prime de bienvenue offerts.','good');
+});
+
+$('#btn-logout').addEventListener('click', () => {
+  session = null; persist();
+  currentView='dash';
+  show('#screen-auth');
+  toast('À bientôt 👋','Tu as été déconnecté.','');
+});
+
+/* redimensionnement : redessiner le graphique */
+window.addEventListener('resize', () => { const u = me(); if (u && u.role==='client' && currentView==='dash') drawChart(u); });
+
+/* ---------- démarrage ---------- */
+(async function init(){
+  await seed();
+  if (me()) { renderApp(); } else { show('#screen-auth'); }
+})();
+</script>
+</body>
+</html>
