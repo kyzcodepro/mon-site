@@ -278,30 +278,7 @@
         <input type="password" id="li-pass" placeholder="••••••••" autocomplete="current-password" />
       </div>
       <button class="btn block" id="btn-login">Se connecter</button>
-      <div class="auth-switch">Pas encore de compte ? <a id="go-signup">Créer un compte</a></div>
-    </div>
-
-    <!-- SIGNUP -->
-    <div id="form-signup" style="display:none">
-      <div class="auth-title">Créer ton compte</div>
-      <div class="auth-sub">Ouverture en 30 secondes. Ton numéro de compte est généré automatiquement.</div>
-      <div class="row-2">
-        <div class="field">
-          <label>Prénom</label>
-          <input type="text" id="su-prenom" placeholder="Sophie" />
-        </div>
-        <div class="field">
-          <label>Nom</label>
-          <input type="text" id="su-nom" placeholder="Martin" />
-        </div>
-      </div>
-      <div class="field">
-        <label>Mot de passe</label>
-        <input type="password" id="su-pass" placeholder="8 caractères minimum" autocomplete="new-password" />
-        <div class="pw-note">Minimum 8 caractères, avec au moins 1 chiffre.</div>
-      </div>
-      <button class="btn block" id="btn-signup">Ouvrir mon compte 🚀</button>
-      <div class="auth-switch">Déjà client ? <a id="go-login">Se connecter</a></div>
+      <div class="auth-switch" style="margin-top:16px;font-size:.85rem">L'ouverture d'un compte se fait auprès de ton conseiller Kyz Account.</div>
     </div>
   </div>
 </section>
@@ -385,6 +362,35 @@ const genNumero = () => {
   return n;
 };
 
+/* ---------- RIB complet (dérivé du numéro de compte) ---------- */
+const RIB_BANQUE = '30012', RIB_GUICHET = '00001';
+function cleRib(banque, guichet, compte){
+  return String(97n - ((89n*BigInt(banque) + 15n*BigInt(guichet) + 3n*BigInt(compte)) % 97n)).padStart(2,'0');
+}
+function ibanFrom(banque, guichet, compte, cle){
+  const bban = banque + guichet + compte + cle;
+  const key = String(98n - (BigInt(bban + '152700') % 97n)).padStart(2,'0'); // F=15, R=27
+  return 'FR' + key + bban;
+}
+function ribOf(u){
+  const compte = '0' + u.numero;
+  const cle = cleRib(RIB_BANQUE, RIB_GUICHET, compte);
+  const iban = ibanFrom(RIB_BANQUE, RIB_GUICHET, compte, cle);
+  return { banque: RIB_BANQUE, guichet: RIB_GUICHET, compte, cle, iban,
+           ibanFmt: iban.replace(/(.{4})/g,'$1 ').trim() };
+}
+/* Accepte un RIB complet (23 chiffres) ou un IBAN FR (27 caractères) */
+function parseRib(raw){
+  let s = String(raw||'').replace(/[\s.-]/g,'').toUpperCase();
+  if (s.startsWith('FR')) s = s.slice(4);
+  if (!/^\d{23}$/.test(s)) return { error:'format' };
+  const banque = s.slice(0,5), guichet = s.slice(5,10), compte = s.slice(10,21), cle = s.slice(21,23);
+  if (cleRib(banque, guichet, compte) !== cle) return { error:'cle' };
+  const numero = compte.replace(/^0/,'');
+  const user = users.find(x=>x.numero===numero && x.role==='client');
+  return { banque, guichet, compte, cle, numero, user };
+}
+
 /* ---------- amorçage : compte administrateur ---------- */
 async function seed(){
   if (users.some(u=>u.role==='admin')) return;
@@ -416,9 +422,18 @@ const me = () => users.find(u => u.id === (session && session.userId));
 const clients = () => users.filter(u => u.role === 'client');
 const userLedger = id => ledger.filter(l => l.userId === id).sort((a,b)=>b.ts-a.ts);
 
-function addOp(user, type, label, montant, meta){
+function addOp(user, type, label, montant, meta, ts){
   user.solde = Math.round((user.solde + montant)*100)/100;
-  ledger.push({ id: uid(), userId: user.id, ts: Date.now(), type, label, montant, soldeApres: user.solde, meta: meta||null });
+  ledger.push({ id: uid(), userId: user.id, ts: ts||Date.now(), type, label, montant, soldeApres: user.solde, meta: meta||null });
+  if (ts && ts < Date.now()-60000) recalcLedger(user);
+}
+
+/* Recalcule la chaîne des soldes d'un compte (utile après une opération antidatée) */
+function recalcLedger(user){
+  const ops = ledger.filter(l=>l.userId===user.id).sort((a,b)=>a.ts-b.ts);
+  let bal = 0;
+  for (const op of ops){ bal = Math.round((bal + op.montant)*100)/100; op.soldeApres = bal; }
+  user.solde = bal;
 }
 
 const TX_STYLE = {
@@ -511,8 +526,8 @@ function renderClientDash(view){
       <div class="bh-amount" id="bal-num">${eur(0)}</div>
       <div class="bh-iban">N° de compte&nbsp;: ${fmtNumero(u.numero)}</div>
       <div class="bh-actions">
-        <button class="btn small" id="act-virement" ${u.statut==='bloqué'?'disabled':''}>📤 Faire un virement</button>
-        <button class="btn small neutral" id="act-demande" ${u.statut==='bloqué'?'disabled':''}>📥 Demande de virement</button>
+        <button class="btn small" id="act-demande" ${u.statut==='bloqué'?'disabled':''}>📥 Demande de virement</button>
+        <button class="btn small neutral" id="act-rib">📄 Mon RIB</button>
       </div>
     </div>
 
@@ -546,8 +561,8 @@ function renderClientDash(view){
   $('#mn') && $('#mn').addEventListener('click',()=>$('#sidebar').classList.toggle('open'));
   animateNum($('#bal-num'), u.solde, v=>eur(v));
   $('#see-all').addEventListener('click', ()=>{ currentView='historique'; renderApp(); });
-  $('#act-virement') && $('#act-virement').addEventListener('click', modalVirement);
   $('#act-demande') && $('#act-demande').addEventListener('click', modalDemande);
+  $('#act-rib') && $('#act-rib').addEventListener('click', modalRib);
   bindRequestActions();
   drawChart(u);
 }
@@ -773,39 +788,33 @@ function drawChart(u){
 let drawChartStatic = () => {};
 
 /* ---------- modales client ---------- */
-function findByNumero(raw){
-  const numero = String(raw||'').replace(/\D/g,'');
-  return { numero, user: users.find(x=>x.numero===numero && x.role==='client') };
-}
-
-function modalVirement(){
+function modalRib(){
   const u = me();
+  const r = ribOf(u);
   openModal(`
-    <h3>📤 Faire un virement</h3>
-    <div class="m-sub">Envoie de l'argent vers un autre compte Kyz Account.</div>
-    <div class="field"><label>N° de compte du bénéficiaire (RIB)</label><input id="v-dest" type="text" inputmode="numeric" maxlength="14" placeholder="10 chiffres" /></div>
-    <div class="field"><label>Montant (€)</label><input id="v-mnt" type="number" min="0.01" step="0.01" placeholder="50.00" /></div>
-    <div class="field"><label>Motif (optionnel)</label><input id="v-note" type="text" placeholder="Remboursement resto…" /></div>
-    <div class="muted">Solde disponible : <b>${eur(u.solde)}</b></div>
+    <h3>📄 Mon RIB</h3>
+    <div class="m-sub">Relevé d'identité bancaire — à transmettre pour recevoir une demande de virement.</div>
+    <div class="card" style="padding:18px">
+      <div class="row-2" style="margin-bottom:10px">
+        <div><div class="t-label" style="font-size:.7rem">Code banque</div><div class="mono" style="font-weight:700">${r.banque}</div></div>
+        <div><div class="t-label" style="font-size:.7rem">Code guichet</div><div class="mono" style="font-weight:700">${r.guichet}</div></div>
+      </div>
+      <div class="row-2" style="margin-bottom:10px">
+        <div><div class="t-label" style="font-size:.7rem">N° de compte</div><div class="mono" style="font-weight:700">${r.compte}</div></div>
+        <div><div class="t-label" style="font-size:.7rem">Clé RIB</div><div class="mono" style="font-weight:700">${r.cle}</div></div>
+      </div>
+      <div class="t-label" style="font-size:.7rem">IBAN</div>
+      <div class="mono" id="rib-iban" style="font-weight:700;letter-spacing:1px;font-size:.95rem">${r.ibanFmt}</div>
+      <div class="muted" style="margin-top:8px">Titulaire : ${esc(u.prenom+' '+u.nom)} · BIC : KYZAFRPP</div>
+    </div>
     <div class="m-actions">
-      <button class="btn ghost" onclick="closeModal()">Annuler</button>
-      <button class="btn" id="v-go">Envoyer</button>
+      <button class="btn ghost" onclick="closeModal()">Fermer</button>
+      <button class="btn" id="rib-copy">📋 Copier l'IBAN</button>
     </div>
   `);
-  $('#v-go').addEventListener('click', () => {
-    const { numero, user: dest } = findByNumero($('#v-dest').value);
-    const mnt = Math.round(parseFloat($('#v-mnt').value)*100)/100;
-    const note = $('#v-note').value.trim();
-    if (numero.length!==10) return toast('Numéro invalide','Le numéro de compte fait 10 chiffres.','bad');
-    if (!dest) return toast('Bénéficiaire introuvable','Aucun compte avec ce numéro.','bad');
-    if (dest.id===u.id) return toast('Virement impossible','Tu ne peux pas te virer de l\'argent à toi-même.','bad');
-    if (dest.statut==='bloqué') return toast('Compte bloqué','Le compte du bénéficiaire est suspendu.','bad');
-    if (!(mnt>0)) return toast('Montant invalide','Saisis un montant supérieur à 0.','bad');
-    if (mnt>u.solde) return toast('Solde insuffisant','Ton solde ne couvre pas ce montant.','bad');
-    addOp(u,'virement_out','Virement vers '+dest.prenom+' '+dest.nom, -mnt, note||null);
-    addOp(dest,'virement_in','Virement de '+u.prenom+' '+u.nom, mnt, note||null);
-    persist(); closeModal(); renderApp();
-    toast('Virement envoyé ✅', eur(mnt)+' → '+dest.prenom+' '+dest.nom,'good');
+  $('#rib-copy').addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(r.iban); toast('IBAN copié ✅','','good'); }
+    catch(e){ toast('Copie impossible','Sélectionne et copie manuellement.','bad'); }
   });
 }
 
@@ -813,8 +822,8 @@ function modalDemande(){
   const u = me();
   openModal(`
     <h3>📥 Demande de virement</h3>
-    <div class="m-sub">Demande de l'argent à un autre compte : il devra accepter avant que le virement parte.</div>
-    <div class="field"><label>N° de compte du payeur (RIB)</label><input id="d-dest" type="text" inputmode="numeric" maxlength="14" placeholder="10 chiffres" /></div>
+    <div class="m-sub">Demande de l'argent à un autre compte : saisis son RIB complet, il devra accepter avant que le virement parte.</div>
+    <div class="field"><label>RIB complet ou IBAN du payeur</label><input id="d-dest" type="text" maxlength="34" placeholder="FR76 3001 2000 0100 … ou 23 chiffres" /><div class="pw-note">Formats acceptés : IBAN (FR76…) ou RIB banque+guichet+compte+clé (23 chiffres).</div></div>
     <div class="field"><label>Montant (€)</label><input id="d-mnt" type="number" min="0.01" step="0.01" placeholder="50.00" /></div>
     <div class="field"><label>Motif (optionnel)</label><input id="d-note" type="text" placeholder="Ma part du cadeau…" /></div>
     <div class="m-actions">
@@ -823,11 +832,13 @@ function modalDemande(){
     </div>
   `);
   $('#d-go').addEventListener('click', () => {
-    const { numero, user: dest } = findByNumero($('#d-dest').value);
+    const r = parseRib($('#d-dest').value);
     const mnt = Math.round(parseFloat($('#d-mnt').value)*100)/100;
     const note = $('#d-note').value.trim();
-    if (numero.length!==10) return toast('Numéro invalide','Le numéro de compte fait 10 chiffres.','bad');
-    if (!dest) return toast('Compte introuvable','Aucun compte avec ce numéro.','bad');
+    if (r.error==='format') return toast('RIB invalide','Saisis un IBAN FR complet ou les 23 chiffres du RIB.','bad');
+    if (r.error==='cle') return toast('Clé RIB incorrecte','Vérifie le RIB saisi (erreur de frappe ?).','bad');
+    const dest = r.user;
+    if (!dest) return toast('Compte introuvable','Aucun compte ne correspond à ce RIB.','bad');
     if (dest.id===u.id) return toast('Demande impossible','Tu ne peux pas te faire une demande à toi-même.','bad');
     if (dest.statut==='bloqué') return toast('Compte bloqué','Ce compte est suspendu.','bad');
     if (!(mnt>0)) return toast('Montant invalide','Saisis un montant supérieur à 0.','bad');
@@ -1004,6 +1015,8 @@ function modalNewClient(){
       <div class="card" style="padding:18px;text-align:center">
         <div class="t-label" style="font-size:.72rem;justify-content:center">N° de compte</div>
         <div class="mono" style="font-size:1.5rem;font-weight:800;letter-spacing:2px;margin-top:6px">${fmtNumero(c.numero)}</div>
+        <div class="t-label" style="font-size:.72rem;justify-content:center;margin-top:10px">IBAN</div>
+        <div class="mono" style="font-size:.88rem;font-weight:700;margin-top:4px">${ribOf(c).ibanFmt}</div>
         <div class="muted" style="margin-top:8px">Mot de passe provisoire : <b>${esc(pass)}</b></div>
       </div>
       <div class="m-actions"><button class="btn" onclick="closeModal()">C'est noté</button></div>
@@ -1019,21 +1032,34 @@ function modalAdminMouvement(c){
       <select id="am-type"><option value="credit">Dépôt (+)</option><option value="debit">Retrait (−)</option></select>
     </div>
     <div class="field"><label>Montant (€)</label><input id="am-mnt" type="number" min="0.01" step="0.01" placeholder="100.00" /></div>
+    <div class="field"><label>Date de l'opération</label><input id="am-date" type="date" /><div class="pw-note">Par défaut : aujourd'hui. Une date passée réordonne l'historique et recalcule les soldes.</div></div>
     <div class="field"><label>Motif</label><input id="am-note" placeholder="Geste commercial, régularisation…" /></div>
     <div class="m-actions">
       <button class="btn ghost" onclick="closeModal()">Annuler</button>
       <button class="btn" id="am-go">Valider</button>
     </div>
   `);
+  const dInput = $('#am-date');
+  dInput.max = new Date().toISOString().slice(0,10);
+  dInput.value = dInput.max;
   $('#am-go').addEventListener('click', () => {
     const kind = $('#am-type').value;
     const mnt = Math.round(parseFloat($('#am-mnt').value)*100)/100;
     const note = $('#am-note').value.trim() || (kind==='credit'?'Dépôt sur le compte':'Retrait du compte');
     if (!(mnt>0)) return toast('Montant invalide','Saisis un montant supérieur à 0.','bad');
     if (kind==='debit' && mnt>c.solde) return toast('Solde insuffisant','Le retrait dépasse le solde du client.','bad');
-    addOp(c, kind==='credit'?'admin_credit':'admin_debit', note, kind==='credit'?mnt:-mnt, 'par '+me().prenom);
+    // date choisie : aujourd'hui → horodatage courant ; date passée → midi ce jour-là
+    let ts = Date.now();
+    const dv = dInput.value;
+    if (dv && dv !== dInput.max){
+      const d = new Date(dv + 'T12:00:00');
+      if (isNaN(d.getTime())) return toast('Date invalide','Vérifie la date saisie.','bad');
+      if (d.getTime() > Date.now()) return toast('Date future refusée','Choisis une date passée ou aujourd\'hui.','bad');
+      ts = d.getTime();
+    }
+    addOp(c, kind==='credit'?'admin_credit':'admin_debit', note, kind==='credit'?mnt:-mnt, 'par '+me().prenom, ts);
     persist(); closeModal(); renderApp();
-    toast('Opération enregistrée ✅', (kind==='credit'?'+':'−')+eur(mnt)+' pour '+c.prenom,'good');
+    toast('Opération enregistrée ✅', (kind==='credit'?'+':'−')+eur(mnt)+' pour '+c.prenom + (ts!==Date.now()&&dv!==dInput.max?' (le '+fmtDate(ts)+')':''),'good');
   });
 }
 
@@ -1088,6 +1114,7 @@ function renderProfil(view){
         <div class="field"><label>Prénom</label><input id="pf-prenom" value="${esc(u.prenom)}" /></div>
         <div class="field"><label>Nom</label><input id="pf-nom" value="${esc(u.nom)}" /></div>
         <div class="field"><label>N° de compte</label><input class="mono" value="${fmtNumero(u.numero)}" disabled style="opacity:.6;letter-spacing:1px" /></div>
+        ${u.role==='client' ? `<div class="field"><label>IBAN</label><input class="mono" value="${ribOf(u).ibanFmt}" disabled style="opacity:.6;font-size:.82rem" /></div>` : ''}
         <button class="btn" id="pf-save">Enregistrer</button>
       </div>
       <div class="card">
@@ -1119,9 +1146,6 @@ function renderProfil(view){
 /* =====================================================
    AUTH
    ===================================================== */
-$('#go-signup').addEventListener('click', ()=>{ $('#form-login').style.display='none'; $('#form-signup').style.display='block'; });
-$('#go-login').addEventListener('click', ()=>{ $('#form-signup').style.display='none'; $('#form-login').style.display='block'; });
-
 $('#btn-login').addEventListener('click', doLogin);
 $('#li-pass').addEventListener('keydown', e=>{ if (e.key==='Enter') doLogin(); });
 async function doLogin(){
@@ -1135,31 +1159,9 @@ async function doLogin(){
   toast('Bienvenue '+u.prenom+' 👋','Connexion réussie.','good');
 }
 
-$('#btn-signup').addEventListener('click', async () => {
-  const prenom = $('#su-prenom').value.trim(), nom = $('#su-nom').value.trim();
-  const pass = $('#su-pass').value;
-  if (!prenom || !nom) return toast('Champs manquants','Prénom et nom obligatoires.','bad');
-  if (pass.length<8 || !/\d/.test(pass)) return toast('Mot de passe trop faible','8 caractères min. et 1 chiffre.','bad');
-  const salt = uid();
-  const u = { id:uid(), prenom, nom, numero:genNumero(), role:'client', salt, passHash:await hashPass(pass,salt), solde:0, statut:'actif', createdAt:Date.now() };
-  users.push(u);
-  session = { userId:u.id, ts:Date.now() }; persist();
-  currentView='dash'; renderApp();
-  openModal(`
-    <h3>🎉 Bienvenue, ${esc(prenom)} !</h3>
-    <div class="m-sub">Ton compte est ouvert. Voici ton numéro de compte — <b>note-le précieusement</b>, il te sert à te connecter et à recevoir des virements :</div>
-    <div class="card" style="padding:18px;text-align:center">
-      <div class="t-label" style="font-size:.72rem;justify-content:center">N° de compte</div>
-      <div class="mono" style="font-size:1.6rem;font-weight:800;letter-spacing:2px;margin-top:6px">${fmtNumero(u.numero)}</div>
-    </div>
-    <div class="m-actions"><button class="btn" onclick="closeModal()">C'est noté ✅</button></div>
-  `);
-});
-
 $('#btn-logout').addEventListener('click', () => {
   session = null; persist();
   currentView='dash';
-  $('#form-signup').style.display='none'; $('#form-login').style.display='block';
   $('#li-numero').value=''; $('#li-pass').value='';
   show('#screen-auth');
   toast('À bientôt 👋','Tu as été déconnecté.','');
