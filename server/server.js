@@ -232,6 +232,17 @@ app.post('/api/demandes/:id/refuse', auth, adminOnly, async (req, res, next) => 
   } catch (e) { next(e); }
 });
 
+/* Suppression d'une demande (nettoyage de l'historique). Une demande encore
+   en attente doit d'abord être validée ou refusée. */
+app.delete('/api/demandes/:id', auth, adminOnly, async (req, res, next) => {
+  try {
+    const [r] = await pool.query(
+      "DELETE FROM demandes_virement WHERE id=? AND statut<>'en_attente'", [req.params.id]);
+    if (!r.affectedRows) return fail(res, 404, 'Demande introuvable ou encore en attente (traite-la d\'abord)');
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
 /* ---------- administration ---------- */
 app.post('/api/clients', auth, adminOnly, async (req, res, next) => {
   try {

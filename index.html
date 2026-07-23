@@ -555,7 +555,7 @@ function renderAdminRequestsCard(){
     html += '<div class="muted" style="margin:12px 0 6px">Dernières traitées :</div>';
     html += traitees.map(r=>`<div class="cell-flex" style="justify-content:space-between;padding:6px 0">
         <div class="lbl"><b style="font-size:.9rem">${esc(r.fromName)} · ${eur(r.montant)}</b> <span class="muted mono" style="font-size:.78rem">${esc(r.rib)}</span></div>
-        <div>${REQ_STATUTS[r.statut]||''}</div>
+        <div style="white-space:nowrap">${REQ_STATUTS[r.statut]||''} <button class="btn small danger" data-req-del="${r.id}" title="Supprimer de l'historique">🗑️</button></div>
       </div>`).join('');
   }
   return html + '</div>';
@@ -575,6 +575,25 @@ function bindRequestActions(){
       await refresh();
       toast('Demande refusée','','');
     } catch(e){ toast('Impossible', e.message, 'bad'); }
+  }));
+  $$('[data-req-del]').forEach(b=>b.addEventListener('click', ()=>{
+    const r = state.requests.find(x=>String(x.id)===String(b.dataset.reqDel));
+    if (!r) return;
+    openModal(`
+      <h3 class="danger-text">🗑️ Supprimer cette demande ?</h3>
+      <div class="m-sub">${esc(r.fromName)} · ${eur(r.montant)} · <span class="mono">${esc(r.rib)}</span><br>Elle disparaîtra de l'historique (y compris pour le client). L'opération de virement associée, si elle existe, reste dans le journal.</div>
+      <div class="m-actions">
+        <button class="btn ghost" onclick="closeModal()">Annuler</button>
+        <button class="btn danger" id="rd-go">Supprimer</button>
+      </div>
+    `);
+    $('#rd-go').addEventListener('click', async ()=>{
+      try {
+        await api('demandes/'+r.id, {method:'DELETE'});
+        closeModal(); await refresh();
+        toast('Demande supprimée','','bad');
+      } catch(e){ toast('Impossible', e.message, 'bad'); }
+    });
   }));
 }
 
