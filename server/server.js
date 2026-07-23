@@ -75,9 +75,19 @@ async function accrueInterest(compteId) {
     if (interets < 0.01) { await conn.rollback(); return; }
     const ns = round2(solde + interets);
     await conn.query('UPDATE comptes SET solde=?, interet_accru_le=NOW() WHERE id=?', [ns, c.id]);
-    await conn.query(
-      "INSERT INTO operations (compte_id,type,libelle,montant,solde_apres) VALUES (?,'interet','Intérêts d\\'épargne (20 %/an)',?,?)",
-      [c.id, interets, ns]);
+    // anti-spam : si la dernière opération du compte est déjà une ligne
+    // d'intérêts, on l'actualise au lieu d'en créer une nouvelle
+    const [last] = await conn.query(
+      'SELECT id, type, montant FROM operations WHERE compte_id=? ORDER BY cree_le DESC, id DESC LIMIT 1 FOR UPDATE', [c.id]);
+    if (last.length && last[0].type === 'interet') {
+      await conn.query(
+        'UPDATE operations SET montant=?, solde_apres=?, cree_le=NOW() WHERE id=?',
+        [round2(parseFloat(last[0].montant) + interets), ns, last[0].id]);
+    } else {
+      await conn.query(
+        "INSERT INTO operations (compte_id,type,libelle,montant,solde_apres) VALUES (?,'interet','Intérêts d\\'épargne (20 %/an)',?,?)",
+        [c.id, interets, ns]);
+    }
     await conn.commit();
   } catch (e) { await conn.rollback().catch(() => {}); console.error('[interets]', e.message); }
   finally { conn.release(); }
@@ -119,6 +129,9 @@ async function auth(req, res, next) {
 }
 const adminOnly = (req, res, next) =>
   req.user.role === 'admin' ? next() : fail(res, 403, 'Réservé à l\'administrateur');
+
+/* identification du serveur (diagnostic : qui répond sur /api ?) */
+app.get('/api/version', (req, res) => res.json({ api: 'kyz-account', version: require('./package.json').version }));
 
 /* ---------- authentification ---------- */
 app.post('/api/login', async (req, res, next) => {
@@ -474,6 +487,29 @@ async function ensureSchema() {
       console.log("[migration] operations : ajout du type 'interet'…");
       await pool.query("ALTER TABLE operations MODIFY COLUMN type ENUM('depot','retrait','virement_in','virement_out','admin_credit','admin_debit','paiement','interet') NOT NULL");
       console.log('[migration] operations : OK');
+    }
+    // anti-spam : fusionne les lignes d'intérêts consécutives existantes
+    const [clients] = await pool.query("SELECT id FROM comptes WHERE role='client'");
+    for (const cl of clients) {
+      const [ops] = await pool.query(
+        'SELECT id, type, montant, solde_apres FROM operations WHERE compte_id=? ORDER BY cree_le, id', [cl.id]);
+      let run = [];
+      const flush = async () => {
+        if (run.length > 1) {
+          const total = round2(run.reduce((s, o) => s + parseFloat(o.montant), 0));
+          const dernier = run[run.length - 1];
+          await pool.query('UPDATE operations SET montant=?, solde_apres=? WHERE id=?', [total, dernier.solde_apres, dernier.id]);
+          const aSupprimer = run.slice(0, -1).map(o => o.id);
+          await pool.query('DELETE FROM operations WHERE id IN (?)', [aSupprimer]);
+          console.log(`[nettoyage] compte ${cl.id} : ${run.length} lignes d'intérêts fusionnées`);
+        }
+        run = [];
+      };
+      for (const o of ops) {
+        if (o.type === 'interet') run.push(o);
+        else await flush();
+      }
+      await flush();
     }
   } catch (e) {
     console.error('[migration] vérification impossible :', e.message);
