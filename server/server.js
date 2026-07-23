@@ -284,21 +284,81 @@ app.post('/api/clients/:id/mouvement', auth, adminOnly, async (req, res, next) =
     if (kind === 'debit' && parseFloat(c.solde) < montant) { await conn.rollback(); return fail(res, 400, 'Solde insuffisant'); }
     const signed = kind === 'credit' ? montant : -montant;
     const libelle = String(req.body.motif || '').trim() || (kind === 'credit' ? 'Dépôt sur le compte' : 'Retrait du compte');
-    const meta = 'par ' + req.user.prenom;
     if (dateOp) {
       await conn.query(
-        'INSERT INTO operations (compte_id,type,libelle,montant,solde_apres,meta,cree_le) VALUES (?,?,?,?,0,?,?)',
-        [c.id, kind === 'credit' ? 'admin_credit' : 'admin_debit', libelle, signed, meta, dateOp]);
+        'INSERT INTO operations (compte_id,type,libelle,montant,solde_apres,cree_le) VALUES (?,?,?,?,0,?)',
+        [c.id, kind === 'credit' ? 'admin_credit' : 'admin_debit', libelle, signed, dateOp]);
       await recalcLedger(conn, c.id);
     } else {
       const ns = round2(parseFloat(c.solde) + signed);
       await conn.query(
-        'INSERT INTO operations (compte_id,type,libelle,montant,solde_apres,meta) VALUES (?,?,?,?,?,?)',
-        [c.id, kind === 'credit' ? 'admin_credit' : 'admin_debit', libelle, signed, ns, meta]);
+        'INSERT INTO operations (compte_id,type,libelle,montant,solde_apres) VALUES (?,?,?,?,?)',
+        [c.id, kind === 'credit' ? 'admin_credit' : 'admin_debit', libelle, signed, ns]);
       await conn.query('UPDATE comptes SET solde=? WHERE id=?', [ns, c.id]);
     }
     await conn.commit();
     res.json({ ok: true });
+  } catch (e) { await conn.rollback().catch(() => {}); next(e); }
+  finally { conn.release(); }
+});
+
+/* ---------- modification / suppression de dépôts & retraits ----------
+   Uniquement les opérations saisies par l'admin (dépôts/retraits) —
+   les virements restent intouchables. Les soldes sont recalculés. */
+const OP_EDITABLE = ['depot', 'retrait', 'admin_credit', 'admin_debit'];
+const OP_CREDIT = ['depot', 'admin_credit'];
+
+app.put('/api/operations/:id', auth, adminOnly, async (req, res, next) => {
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [rows] = await conn.query('SELECT * FROM operations WHERE id=? FOR UPDATE', [req.params.id]);
+    const op = rows[0];
+    if (!op) { await conn.rollback(); return fail(res, 404, 'Opération introuvable'); }
+    if (!OP_EDITABLE.includes(op.type)) { await conn.rollback(); return fail(res, 400, 'Seuls les dépôts et retraits sont modifiables'); }
+
+    let montant = op.montant;
+    if (req.body.montant !== undefined) {
+      const m = round2(parseFloat(req.body.montant));
+      if (!(m > 0)) { await conn.rollback(); return fail(res, 400, 'Montant invalide'); }
+      montant = OP_CREDIT.includes(op.type) ? m : -m;
+    }
+    let libelle = op.libelle;
+    if (req.body.motif !== undefined && String(req.body.motif).trim()) libelle = String(req.body.motif).trim().slice(0, 160);
+
+    let creeLe = op.cree_le;
+    if (req.body.date) {
+      const today = new Date().toISOString().slice(0, 10);
+      if (req.body.date > today) { await conn.rollback(); return fail(res, 400, 'Date future refusée'); }
+      const cur = new Date(op.cree_le).toISOString().slice(0, 10);
+      if (req.body.date !== cur) {
+        const d = new Date(req.body.date + 'T12:00:00');
+        if (isNaN(d.getTime())) { await conn.rollback(); return fail(res, 400, 'Date invalide'); }
+        creeLe = d;
+      }
+    }
+    await conn.query('UPDATE operations SET montant=?, libelle=?, cree_le=? WHERE id=?', [montant, libelle, creeLe, op.id]);
+    const bal = await recalcLedger(conn, op.compte_id);
+    if (bal < 0) { await conn.rollback(); return fail(res, 400, 'Impossible : le solde du client deviendrait négatif (' + bal.toFixed(2) + ' €)'); }
+    await conn.commit();
+    res.json({ ok: true, solde: bal });
+  } catch (e) { await conn.rollback().catch(() => {}); next(e); }
+  finally { conn.release(); }
+});
+
+app.delete('/api/operations/:id', auth, adminOnly, async (req, res, next) => {
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [rows] = await conn.query('SELECT * FROM operations WHERE id=? FOR UPDATE', [req.params.id]);
+    const op = rows[0];
+    if (!op) { await conn.rollback(); return fail(res, 404, 'Opération introuvable'); }
+    if (!OP_EDITABLE.includes(op.type)) { await conn.rollback(); return fail(res, 400, 'Seuls les dépôts et retraits sont supprimables'); }
+    await conn.query('DELETE FROM operations WHERE id=?', [op.id]);
+    const bal = await recalcLedger(conn, op.compte_id);
+    if (bal < 0) { await conn.rollback(); return fail(res, 400, 'Impossible : le solde du client deviendrait négatif (' + bal.toFixed(2) + ' €)'); }
+    await conn.commit();
+    res.json({ ok: true, solde: bal });
   } catch (e) { await conn.rollback().catch(() => {}); next(e); }
   finally { conn.release(); }
 });

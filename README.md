@@ -24,6 +24,9 @@ administrateur complet. Interface moderne (thème sombre, dégradés, animations
   débité) ou refuser, avec RIB saisi et solde du client affichés
 - **Dépôt / Retrait** sur n'importe quel compte, avec **date d'opération au
   choix** (antidatage : l'historique et les soldes sont recalculés)
+- **Modification / suppression des dépôts et retraits** (montant, date,
+  libellé) avec recalcul automatique des soldes — les virements restent
+  intouchables
 - Gestion clients : créer (numéro + IBAN générés, mot de passe provisoire),
   bloquer/débloquer, supprimer
 - Fiche client détaillée avec historique
@@ -78,6 +81,7 @@ server/server.js  — API Express + MySQL (sert aussi le site)
 server/.env       — accès base de données (à créer depuis .env.example)
 sql/schema.sql    — schéma MySQL/MariaDB à importer chez l'hébergeur (neuf)
 sql/migration-01-demandes-rib-libre.sql — migration pour base existante
+sql/migration-02-nettoyage-meta.sql     — retire les mentions « par Admin »
 ```
 
 ## Hébergement

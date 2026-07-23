@@ -767,23 +767,88 @@ function renderAdminDash(view){
   $('#new-client').addEventListener('click', modalNewClient);
   $('#see-ops').addEventListener('click', ()=>{ currentView='ops'; renderApp(); });
   bindRequestActions();
+  bindOpActions();
 }
+
+const OP_EDITABLE = ['depot','retrait','admin_credit','admin_debit'];
 
 function renderAdminTxTable(list){
   if (!list.length) return `<div class="empty"><div class="e-ico">🗒️</div>Aucune opération.</div>`;
   return `<div class="tbl-wrap"><table>
-    <thead><tr><th>Client</th><th>Opération</th><th>Date</th><th style="text-align:right">Montant</th></tr></thead>
+    <thead><tr><th>Client</th><th>Opération</th><th>Date</th><th style="text-align:right">Montant</th><th style="text-align:right">Actions</th></tr></thead>
     <tbody>${list.map(l=>{
       const nomC = (l.prenom||'?')+' '+(l.nom||'');
       const st = txStyle(l.type);
+      const editable = OP_EDITABLE.includes(l.type);
       return `<tr>
         <td><div class="cell-flex"><div class="avatar" style="width:32px;height:32px;font-size:.8rem">${esc((l.prenom||'?')[0]+((l.nom||'')[0]||''))}</div><div class="lbl"><b>${esc(nomC)}</b></div></div></td>
         <td><div class="cell-flex"><div class="tx-ico">${st.ico}</div><div class="lbl"><b>${esc(l.label)}</b><span><span class="chip ${st.chip}" style="margin-top:2px">${st.name}</span></span></div></div></td>
         <td class="muted">${fmtDateTime(l.ts)}</td>
         <td style="text-align:right" class="amount ${l.montant>=0?'pos':'neg'}">${l.montant>=0?'+':''}${eur(l.montant)}</td>
+        <td style="text-align:right;white-space:nowrap">${editable?`
+          <button class="btn small neutral" data-op-edit="${l.id}" title="Modifier">✏️</button>
+          <button class="btn small danger" data-op-del="${l.id}" title="Supprimer">🗑️</button>`:''}</td>
       </tr>`;
     }).join('')}</tbody>
   </table></div>`;
+}
+
+function bindOpActions(){
+  $$('[data-op-edit]').forEach(b=>b.addEventListener('click', ()=>{
+    const op = state.ledger.find(x=>String(x.id)===String(b.dataset.opEdit));
+    if (op) modalEditOp(op);
+  }));
+  $$('[data-op-del]').forEach(b=>b.addEventListener('click', ()=>{
+    const op = state.ledger.find(x=>String(x.id)===String(b.dataset.opDel));
+    if (op) modalDeleteOp(op);
+  }));
+}
+
+function modalEditOp(op){
+  const st = txStyle(op.type);
+  openModal(`
+    <h3>✏️ Modifier ${st.name.toLowerCase()}</h3>
+    <div class="m-sub">${esc((op.prenom||'')+' '+(op.nom||''))} — ${esc(op.label)}</div>
+    <div class="field"><label>Montant (€)</label><input id="eo-mnt" type="number" min="0.01" step="0.01" value="${Math.abs(op.montant)}" /></div>
+    <div class="field"><label>Date de l'opération</label><input id="eo-date" type="date" /></div>
+    <div class="field"><label>Libellé</label><input id="eo-note" value="${esc(op.label)}" maxlength="160" /></div>
+    <div class="pw-note">L'historique et les soldes du client seront recalculés.</div>
+    <div class="m-actions">
+      <button class="btn ghost" onclick="closeModal()">Annuler</button>
+      <button class="btn" id="eo-go">Enregistrer</button>
+    </div>
+  `);
+  const dInput = $('#eo-date');
+  dInput.max = new Date().toISOString().slice(0,10);
+  dInput.value = new Date(op.ts).toISOString().slice(0,10);
+  $('#eo-go').addEventListener('click', async () => {
+    const mnt = Math.round(parseFloat($('#eo-mnt').value)*100)/100;
+    if (!(mnt>0)) return toast('Montant invalide','Saisis un montant supérieur à 0.','bad');
+    try {
+      await api('operations/'+op.id, { method:'PUT', body:{ montant: mnt, date: dInput.value, motif: $('#eo-note').value.trim() } });
+      closeModal(); await refresh();
+      toast('Opération modifiée ✅','Les soldes ont été recalculés.','good');
+    } catch(e){ toast('Impossible', e.message, 'bad'); }
+  });
+}
+
+function modalDeleteOp(op){
+  const st = txStyle(op.type);
+  openModal(`
+    <h3 class="danger-text">🗑️ Supprimer ce ${st.name.toLowerCase()} ?</h3>
+    <div class="m-sub">${esc((op.prenom||'')+' '+(op.nom||''))} — ${esc(op.label)} · ${eur(op.montant)} · ${fmtDateTime(op.ts)}<br>L'historique et les soldes du client seront recalculés.</div>
+    <div class="m-actions">
+      <button class="btn ghost" onclick="closeModal()">Annuler</button>
+      <button class="btn danger" id="do-go">Supprimer définitivement</button>
+    </div>
+  `);
+  $('#do-go').addEventListener('click', async () => {
+    try {
+      await api('operations/'+op.id, { method:'DELETE' });
+      closeModal(); await refresh();
+      toast('Opération supprimée','Les soldes ont été recalculés.','bad');
+    } catch(e){ toast('Impossible', e.message, 'bad'); }
+  });
 }
 
 function renderAdminClients(view){
@@ -863,6 +928,7 @@ function renderAdminOps(view){
     let list = state.ledger;
     if (q) list = list.filter(l => (l.label+' '+(l.prenom||'')+' '+(l.nom||'')).toLowerCase().includes(q));
     $('#op-table').innerHTML = renderAdminTxTable(list.slice(0,60));
+    bindOpActions();
   };
   $('#op-q').addEventListener('input', e=>{ q=e.target.value.toLowerCase(); upd(); });
   upd();
