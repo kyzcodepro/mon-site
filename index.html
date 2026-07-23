@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>NovaBank — Gestion de comptes clients</title>
-<meta name="description" content="NovaBank : application de gestion de comptes clients avec espace personnel, historique des opérations et administration." />
+<title>Kyz Account — Gestion de comptes clients</title>
+<meta name="description" content="Kyz Account : application de gestion de comptes clients avec espace personnel, historique des opérations et administration." />
 <style>
   :root{
     --bg:#0b0e17;            /* fond app */
@@ -91,11 +91,6 @@
   .btn.neutral{background:var(--surface-2);box-shadow:none;border:1px solid var(--stroke)}
   .auth-switch{margin-top:20px;text-align:center;color:var(--text-2);font-size:.92rem}
   .auth-switch a{color:var(--accent-2);cursor:pointer;font-weight:600;text-decoration:none}
-  .demo-hint{
-    margin-top:22px;padding:13px 15px;border-radius:12px;font-size:.82rem;line-height:1.55;
-    background:rgba(34,211,238,.08);border:1px solid rgba(34,211,238,.25);color:var(--text-2);
-  }
-  .demo-hint code{background:rgba(255,255,255,.09);padding:2px 7px;border-radius:6px;color:var(--accent-2);font-size:.8rem}
 
   /* ============ APP LAYOUT ============ */
   .app{display:grid;grid-template-columns:250px 1fr;min-height:100vh}
@@ -266,17 +261,17 @@
 <section class="screen" id="screen-auth">
   <div class="auth-card fade-in">
     <div class="logo-row">
-      <div class="logo-mark">N</div>
-      <div class="logo-name">Nova<em>Bank</em></div>
+      <div class="logo-mark">K</div>
+      <div class="logo-name">Kyz<em>Account</em></div>
     </div>
 
     <!-- LOGIN -->
     <div id="form-login">
       <div class="auth-title">Bon retour 👋</div>
-      <div class="auth-sub">Connecte-toi pour accéder à ton espace.</div>
+      <div class="auth-sub">Connecte-toi avec ton numéro de compte.</div>
       <div class="field">
-        <label>Email</label>
-        <input type="email" id="li-email" placeholder="toi@exemple.fr" autocomplete="username" />
+        <label>Numéro de compte</label>
+        <input type="text" id="li-numero" placeholder="10 chiffres" inputmode="numeric" maxlength="12" autocomplete="username" />
       </div>
       <div class="field">
         <label>Mot de passe</label>
@@ -284,17 +279,12 @@
       </div>
       <button class="btn block" id="btn-login">Se connecter</button>
       <div class="auth-switch">Pas encore de compte ? <a id="go-signup">Créer un compte</a></div>
-      <div class="demo-hint">
-        🎭 <b>Mode démo</b> — comptes de test :<br />
-        Admin : <code>admin@novabank.fr</code> / <code>Admin123!</code><br />
-        Client : <code>sophie@exemple.fr</code> / <code>Demo123!</code>
-      </div>
     </div>
 
     <!-- SIGNUP -->
     <div id="form-signup" style="display:none">
       <div class="auth-title">Créer ton compte</div>
-      <div class="auth-sub">Ouverture en 30 secondes, sans paperasse.</div>
+      <div class="auth-sub">Ouverture en 30 secondes. Ton numéro de compte est généré automatiquement.</div>
       <div class="row-2">
         <div class="field">
           <label>Prénom</label>
@@ -304,10 +294,6 @@
           <label>Nom</label>
           <input type="text" id="su-nom" placeholder="Martin" />
         </div>
-      </div>
-      <div class="field">
-        <label>Email</label>
-        <input type="email" id="su-email" placeholder="toi@exemple.fr" autocomplete="username" />
       </div>
       <div class="field">
         <label>Mot de passe</label>
@@ -325,8 +311,8 @@
   <div class="app">
     <aside class="sidebar" id="sidebar">
       <div class="logo-row">
-        <div class="logo-mark">N</div>
-        <div class="logo-name">Nova<em>Bank</em></div>
+        <div class="logo-mark">K</div>
+        <div class="logo-name">Kyz<em>Account</em></div>
       </div>
       <div id="nav-links"></div>
       <div class="spacer"></div>
@@ -352,8 +338,8 @@
 
 <script>
 /* =====================================================
-   NovaBank — démo de gestion de comptes clients
-   Données stockées en localStorage (démonstration).
+   Kyz Account — gestion de comptes clients
+   Données stockées en localStorage.
    ===================================================== */
 'use strict';
 
@@ -377,56 +363,37 @@ async function hashPass(pass, salt){
   for (let i=0;i<str.length;i++){ h = ((h<<5)-h+str.charCodeAt(i))|0; }
   return 'f' + Math.abs(h).toString(16);
 }
-const genIban = () => {
-  let digits = '';
-  for(let i=0;i<20;i++) digits += Math.floor(Math.random()*10);
-  return 'FR76 ' + digits.replace(/(\d{4})/g,'$1 ').trim();
-};
+const fmtNumero = n => String(n).replace(/(\d{2})(?=\d)/g,'$1 ').trim();
 
 /* ---------- persistance ---------- */
 const DB = {
   load(key, def){ try { return JSON.parse(localStorage.getItem(key)) ?? def; } catch(e){ return def; } },
   save(key, val){ localStorage.setItem(key, JSON.stringify(val)); },
 };
-let users = DB.load('nb_users', []);
-let ledger = DB.load('nb_ledger', []);   // {id,userId,ts,type,label,montant(signed),soldeApres,meta}
-let session = DB.load('nb_session', null);
-const persist = () => { DB.save('nb_users', users); DB.save('nb_ledger', ledger); DB.save('nb_session', session); };
+let users = DB.load('ka_users', []);
+let ledger = DB.load('ka_ledger', []);   // {id,userId,ts,type,label,montant(signed),soldeApres,meta}
+let requests = DB.load('ka_requests', []); // {id,fromId(demandeur),toId(payeur),montant,note,statut,ts}
+let session = DB.load('ka_session', null);
+const persist = () => { DB.save('ka_users', users); DB.save('ka_ledger', ledger); DB.save('ka_requests', requests); DB.save('ka_session', session); };
 
-/* ---------- amorçage démo ---------- */
+const genNumero = () => {
+  let n;
+  do {
+    n = String(Math.floor(Math.random()*9)+1);
+    for (let i=0;i<9;i++) n += Math.floor(Math.random()*10);
+  } while (users.some(u=>u.numero===n));
+  return n;
+};
+
+/* ---------- amorçage : compte administrateur ---------- */
 async function seed(){
-  if (users.length) return;
-  const mk = async (prenom, nom, email, pass, role) => {
-    const salt = uid();
-    return {
-      id: uid(), prenom, nom, email, role,
-      salt, passHash: await hashPass(pass, salt),
-      iban: genIban(), solde: 0, statut: 'actif',
-      createdAt: Date.now() - Math.floor(Math.random()*90+10)*86400000,
-    };
-  };
-  const admin  = await mk('Alex','Moreau','admin@novabank.fr','Admin123!','admin');
-  const c1 = await mk('Sophie','Martin','sophie@exemple.fr','Demo123!','client');
-  const c2 = await mk('Karim','Benali','karim@exemple.fr','Demo123!','client');
-  const c3 = await mk('Léa','Dubois','lea@exemple.fr','Demo123!','client');
-  users = [admin, c1, c2, c3];
-
-  // historique de démonstration
-  const scripts = [
-    [c1, [ ['depot','Prime de bienvenue',500], ['depot','Salaire — Acme SARL',2140], ['paiement','Loyer appartement',-780], ['paiement','Courses — SuperFrais',-96.4], ['depot','Remboursement Alice',45], ['paiement','Abonnement mobile',-19.99], ['depot','Salaire — Acme SARL',2140], ['paiement','Loyer appartement',-780], ['paiement','Restaurant',-58.5] ]],
-    [c2, [ ['depot','Prime de bienvenue',500], ['depot','Virement reçu — freelance',1350], ['paiement','Matériel photo',-420], ['paiement','Essence',-72], ['depot','Virement reçu — freelance',980], ['paiement','Assurance auto',-64.3] ]],
-    [c3, [ ['depot','Prime de bienvenue',500], ['depot','Bourse études',450], ['paiement','Livres',-38], ['paiement','Transport',-25], ['depot','Job étudiant',380], ['paiement','Concert',-49] ]],
-  ];
-  for (const [u, ops] of scripts){
-    let bal = 0;
-    let t = u.createdAt;
-    for (const [type,label,mnt] of ops){
-      bal = Math.round((bal + mnt)*100)/100;
-      t += Math.floor(Math.random()*9+2)*86400000;
-      ledger.push({ id: uid(), userId: u.id, ts: Math.min(t, Date.now()-3600000), type, label, montant: mnt, soldeApres: bal });
-    }
-    u.solde = bal;
-  }
+  if (users.some(u=>u.role==='admin')) return;
+  const salt = uid();
+  users.push({
+    id: uid(), prenom:'Admin', nom:'Kyz', numero:'0000000001', role:'admin',
+    salt, passHash: await hashPass('Admin123!', salt),
+    solde: 0, statut:'actif', createdAt: Date.now(),
+  });
   persist();
 }
 
@@ -460,8 +427,8 @@ const TX_STYLE = {
   virement_in:  { ico:'📥', chip:'ok',  name:'Virement reçu' },
   virement_out: { ico:'📤', chip:'info',name:'Virement émis' },
   retrait:  { ico:'🏧', chip:'warn', name:'Retrait' },
-  admin_credit: { ico:'🛠️', chip:'ok', name:'Crédit admin' },
-  admin_debit:  { ico:'🛠️', chip:'ko', name:'Débit admin' },
+  admin_credit: { ico:'💰', chip:'ok', name:'Dépôt' },
+  admin_debit:  { ico:'🏧', chip:'warn', name:'Retrait' },
 };
 const txStyle = t => TX_STYLE[t] || { ico:'💳', chip:'info', name:t };
 
@@ -537,18 +504,19 @@ function renderClientDash(view){
       </div>
     </div>
 
-    ${u.statut==='bloqué' ? `<div class="card fade-in" style="border-color:rgba(248,113,113,.5);margin-bottom:20px"><b class="danger-text">⚠️ Compte suspendu</b><div class="muted mt" style="margin-top:6px">Ton compte est temporairement bloqué. Contacte le support NovaBank.</div></div>` : ''}
+    ${u.statut==='bloqué' ? `<div class="card fade-in" style="border-color:rgba(248,113,113,.5);margin-bottom:20px"><b class="danger-text">⚠️ Compte suspendu</b><div class="muted mt" style="margin-top:6px">Ton compte est temporairement bloqué. Contacte le support Kyz Account.</div></div>` : ''}
 
     <div class="balance-hero fade-in">
       <div class="bh-label">Solde disponible</div>
       <div class="bh-amount" id="bal-num">${eur(0)}</div>
-      <div class="bh-iban">${esc(u.iban)}</div>
+      <div class="bh-iban">N° de compte&nbsp;: ${fmtNumero(u.numero)}</div>
       <div class="bh-actions">
         <button class="btn small" id="act-virement" ${u.statut==='bloqué'?'disabled':''}>📤 Faire un virement</button>
-        <button class="btn small neutral" id="act-depot" ${u.statut==='bloqué'?'disabled':''}>💰 Déposer</button>
-        <button class="btn small neutral" id="act-retrait" ${u.statut==='bloqué'?'disabled':''}>🏧 Retirer</button>
+        <button class="btn small neutral" id="act-demande" ${u.statut==='bloqué'?'disabled':''}>📥 Demande de virement</button>
       </div>
     </div>
+
+    ${renderRequestsCard(u)}
 
     <div class="grid cols-3 mt fade-in">
       <div class="card tile"><div class="t-label">📥 Entrées (30 j)</div><div class="t-value" style="color:var(--good)">+${eur(inMonth).replace(/ €/,' €')}</div><div class="t-delta">revenus et virements reçus</div></div>
@@ -579,9 +547,63 @@ function renderClientDash(view){
   animateNum($('#bal-num'), u.solde, v=>eur(v));
   $('#see-all').addEventListener('click', ()=>{ currentView='historique'; renderApp(); });
   $('#act-virement') && $('#act-virement').addEventListener('click', modalVirement);
-  $('#act-depot') && $('#act-depot').addEventListener('click', ()=>modalMouvement('depot'));
-  $('#act-retrait') && $('#act-retrait').addEventListener('click', ()=>modalMouvement('retrait'));
+  $('#act-demande') && $('#act-demande').addEventListener('click', modalDemande);
+  bindRequestActions();
   drawChart(u);
+}
+
+/* ---------- demandes de virement ---------- */
+function renderRequestsCard(u){
+  const recues = requests.filter(r=>r.toId===u.id && r.statut==='en_attente').sort((a,b)=>b.ts-a.ts);
+  const envoyees = requests.filter(r=>r.fromId===u.id).sort((a,b)=>b.ts-a.ts).slice(0,4);
+  if (!recues.length && !envoyees.length) return '';
+  const STATUTS = { en_attente:'<span class="chip warn">⏳ En attente</span>', acceptée:'<span class="chip ok">✔ Acceptée</span>', refusée:'<span class="chip ko">✖ Refusée</span>' };
+  let html = '<div class="card mt fade-in"><div class="card-head"><h3>Demandes de virement</h3></div>';
+  if (recues.length){
+    html += '<div class="muted" style="margin-bottom:10px">On te demande :</div>';
+    html += recues.map(r=>{
+      const from = users.find(x=>x.id===r.fromId) || {prenom:'?',nom:''};
+      return `<div class="cell-flex" style="justify-content:space-between;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.05)">
+        <div class="cell-flex"><div class="tx-ico">📥</div><div class="lbl"><b>${esc(from.prenom+' '+from.nom)} demande ${eur(r.montant)}</b><span>${r.note?esc(r.note)+' · ':''}${fmtDateTime(r.ts)}</span></div></div>
+        <div style="white-space:nowrap">
+          <button class="btn small success" data-req-acc="${r.id}">Payer</button>
+          <button class="btn small danger" data-req-ref="${r.id}">Refuser</button>
+        </div>
+      </div>`;
+    }).join('');
+  }
+  if (envoyees.length){
+    html += '<div class="muted" style="margin:14px 0 10px">Tes demandes :</div>';
+    html += envoyees.map(r=>{
+      const to = users.find(x=>x.id===r.toId) || {prenom:'?',nom:''};
+      return `<div class="cell-flex" style="justify-content:space-between;padding:8px 0">
+        <div class="lbl"><b style="font-size:.92rem">${eur(r.montant)} à ${esc(to.prenom+' '+to.nom)}</b> <span class="muted">· ${fmtDateTime(r.ts)}</span></div>
+        <div>${STATUTS[r.statut]||''}</div>
+      </div>`;
+    }).join('');
+  }
+  return html + '</div>';
+}
+
+function bindRequestActions(){
+  $$('[data-req-acc]').forEach(b=>b.addEventListener('click',()=>{
+    const r = requests.find(x=>x.id===b.dataset.reqAcc); if (!r || r.statut!=='en_attente') return;
+    const payeur = users.find(x=>x.id===r.toId), benef = users.find(x=>x.id===r.fromId);
+    if (!payeur || !benef) return;
+    if (benef.statut==='bloqué') return toast('Impossible','Le compte du bénéficiaire est suspendu.','bad');
+    if (r.montant > payeur.solde) return toast('Solde insuffisant','Ton solde ne couvre pas cette demande.','bad');
+    addOp(payeur,'virement_out','Virement vers '+benef.prenom+' '+benef.nom, -r.montant, r.note||'demande acceptée');
+    addOp(benef,'virement_in','Virement de '+payeur.prenom+' '+payeur.nom, r.montant, r.note||'demande acceptée');
+    r.statut = 'acceptée';
+    persist(); renderApp();
+    toast('Demande payée ✅', eur(r.montant)+' → '+benef.prenom,'good');
+  }));
+  $$('[data-req-ref]').forEach(b=>b.addEventListener('click',()=>{
+    const r = requests.find(x=>x.id===b.dataset.reqRef); if (!r || r.statut!=='en_attente') return;
+    r.statut = 'refusée';
+    persist(); renderApp();
+    toast('Demande refusée','','');
+  }));
 }
 
 function renderTxTable(list){
@@ -751,12 +773,17 @@ function drawChart(u){
 let drawChartStatic = () => {};
 
 /* ---------- modales client ---------- */
+function findByNumero(raw){
+  const numero = String(raw||'').replace(/\D/g,'');
+  return { numero, user: users.find(x=>x.numero===numero && x.role==='client') };
+}
+
 function modalVirement(){
   const u = me();
   openModal(`
     <h3>📤 Faire un virement</h3>
-    <div class="m-sub">Envoie de l'argent à un autre client NovaBank.</div>
-    <div class="field"><label>Email du bénéficiaire</label><input id="v-dest" type="email" placeholder="destinataire@exemple.fr" /></div>
+    <div class="m-sub">Envoie de l'argent vers un autre compte Kyz Account.</div>
+    <div class="field"><label>N° de compte du bénéficiaire (RIB)</label><input id="v-dest" type="text" inputmode="numeric" maxlength="14" placeholder="10 chiffres" /></div>
     <div class="field"><label>Montant (€)</label><input id="v-mnt" type="number" min="0.01" step="0.01" placeholder="50.00" /></div>
     <div class="field"><label>Motif (optionnel)</label><input id="v-note" type="text" placeholder="Remboursement resto…" /></div>
     <div class="muted">Solde disponible : <b>${eur(u.solde)}</b></div>
@@ -766,11 +793,11 @@ function modalVirement(){
     </div>
   `);
   $('#v-go').addEventListener('click', () => {
-    const email = $('#v-dest').value.trim().toLowerCase();
+    const { numero, user: dest } = findByNumero($('#v-dest').value);
     const mnt = Math.round(parseFloat($('#v-mnt').value)*100)/100;
     const note = $('#v-note').value.trim();
-    const dest = users.find(x=>x.email===email && x.role==='client');
-    if (!dest) return toast('Bénéficiaire introuvable','Aucun client avec cet email.','bad');
+    if (numero.length!==10) return toast('Numéro invalide','Le numéro de compte fait 10 chiffres.','bad');
+    if (!dest) return toast('Bénéficiaire introuvable','Aucun compte avec ce numéro.','bad');
     if (dest.id===u.id) return toast('Virement impossible','Tu ne peux pas te virer de l\'argent à toi-même.','bad');
     if (dest.statut==='bloqué') return toast('Compte bloqué','Le compte du bénéficiaire est suspendu.','bad');
     if (!(mnt>0)) return toast('Montant invalide','Saisis un montant supérieur à 0.','bad');
@@ -782,28 +809,31 @@ function modalVirement(){
   });
 }
 
-function modalMouvement(kind){
+function modalDemande(){
   const u = me();
-  const conf = kind==='depot'
-    ? { titre:'💰 Déposer de l\'argent', sub:'Alimente ton compte (démo).', btn:'Déposer', type:'depot', label:'Dépôt sur le compte', sign:1 }
-    : { titre:'🏧 Retirer de l\'argent', sub:'Retrait en espèces (démo).', btn:'Retirer', type:'retrait', label:'Retrait distributeur', sign:-1 };
   openModal(`
-    <h3>${conf.titre}</h3>
-    <div class="m-sub">${conf.sub}</div>
-    <div class="field"><label>Montant (€)</label><input id="m-mnt" type="number" min="0.01" step="0.01" placeholder="100.00" /></div>
-    <div class="muted">Solde actuel : <b>${eur(u.solde)}</b></div>
+    <h3>📥 Demande de virement</h3>
+    <div class="m-sub">Demande de l'argent à un autre compte : il devra accepter avant que le virement parte.</div>
+    <div class="field"><label>N° de compte du payeur (RIB)</label><input id="d-dest" type="text" inputmode="numeric" maxlength="14" placeholder="10 chiffres" /></div>
+    <div class="field"><label>Montant (€)</label><input id="d-mnt" type="number" min="0.01" step="0.01" placeholder="50.00" /></div>
+    <div class="field"><label>Motif (optionnel)</label><input id="d-note" type="text" placeholder="Ma part du cadeau…" /></div>
     <div class="m-actions">
       <button class="btn ghost" onclick="closeModal()">Annuler</button>
-      <button class="btn" id="m-go">${conf.btn}</button>
+      <button class="btn" id="d-go">Envoyer la demande</button>
     </div>
   `);
-  $('#m-go').addEventListener('click', () => {
-    const mnt = Math.round(parseFloat($('#m-mnt').value)*100)/100;
+  $('#d-go').addEventListener('click', () => {
+    const { numero, user: dest } = findByNumero($('#d-dest').value);
+    const mnt = Math.round(parseFloat($('#d-mnt').value)*100)/100;
+    const note = $('#d-note').value.trim();
+    if (numero.length!==10) return toast('Numéro invalide','Le numéro de compte fait 10 chiffres.','bad');
+    if (!dest) return toast('Compte introuvable','Aucun compte avec ce numéro.','bad');
+    if (dest.id===u.id) return toast('Demande impossible','Tu ne peux pas te faire une demande à toi-même.','bad');
+    if (dest.statut==='bloqué') return toast('Compte bloqué','Ce compte est suspendu.','bad');
     if (!(mnt>0)) return toast('Montant invalide','Saisis un montant supérieur à 0.','bad');
-    if (conf.sign<0 && mnt>u.solde) return toast('Solde insuffisant','Ton solde ne couvre pas ce retrait.','bad');
-    addOp(u, conf.type, conf.label, conf.sign*mnt);
+    requests.push({ id:uid(), fromId:u.id, toId:dest.id, montant:mnt, note:note||null, statut:'en_attente', ts:Date.now() });
     persist(); closeModal(); renderApp();
-    toast(kind==='depot'?'Dépôt effectué ✅':'Retrait effectué ✅', eur(mnt),'good');
+    toast('Demande envoyée ⏳', eur(mnt)+' demandés à '+dest.prenom+' '+dest.nom,'good');
   });
 }
 
@@ -868,7 +898,7 @@ function renderAdminClients(view){
         <div class="sub">Créer, créditer, bloquer, gérer.</div>
       </div>
       <div class="filters">
-        <div class="search">🔎 <input id="cl-q" placeholder="Nom, email…" /></div>
+        <div class="search">🔎 <input id="cl-q" placeholder="Nom, n° de compte…" /></div>
         <button class="btn" id="new-client">＋ Nouveau client</button>
       </div>
     </div>
@@ -878,15 +908,15 @@ function renderAdminClients(view){
   let q='';
   const upd = () => {
     let list = clients().sort((a,b)=>b.createdAt-a.createdAt);
-    if (q) list = list.filter(c => (c.prenom+' '+c.nom+' '+c.email).toLowerCase().includes(q));
+    if (q) list = list.filter(c => (c.prenom+' '+c.nom+' '+c.numero).toLowerCase().includes(q));
     $('#cl-table').innerHTML = !list.length
       ? `<div class="empty"><div class="e-ico">👥</div>Aucun client trouvé.</div>`
       : `<div class="tbl-wrap"><table>
-        <thead><tr><th>Client</th><th>IBAN</th><th>Statut</th><th style="text-align:right">Solde</th><th style="text-align:right">Actions</th></tr></thead>
+        <thead><tr><th>Client</th><th>N° de compte</th><th>Statut</th><th style="text-align:right">Solde</th><th style="text-align:right">Actions</th></tr></thead>
         <tbody>${list.map(c=>`
           <tr>
-            <td><div class="cell-flex"><div class="avatar" style="width:34px;height:34px;font-size:.82rem">${esc(c.prenom[0]+c.nom[0])}</div><div class="lbl"><b>${esc(c.prenom+' '+c.nom)}</b><span>${esc(c.email)}</span></div></div></td>
-            <td class="mono muted" style="font-size:.78rem">${esc(c.iban)}</td>
+            <td><div class="cell-flex"><div class="avatar" style="width:34px;height:34px;font-size:.82rem">${esc(c.prenom[0]+c.nom[0])}</div><div class="lbl"><b>${esc(c.prenom+' '+c.nom)}</b><span>client depuis le ${fmtDate(c.createdAt)}</span></div></div></td>
+            <td class="mono muted" style="font-size:.82rem">${fmtNumero(c.numero)}</td>
             <td>${c.statut==='actif'?'<span class="chip ok">● Actif</span>':'<span class="chip ko">● Bloqué</span>'}</td>
             <td style="text-align:right" class="amount">${eur(c.solde)}</td>
             <td style="text-align:right;white-space:nowrap">
@@ -932,8 +962,8 @@ function renderAdminOps(view){
   const upd = () => {
     let list = ledger.slice().sort((a,b)=>b.ts-a.ts);
     if (q) list = list.filter(l=>{
-      const u = users.find(x=>x.id===l.userId) || {prenom:'',nom:'',email:''};
-      return (l.label+' '+u.prenom+' '+u.nom+' '+u.email).toLowerCase().includes(q);
+      const u = users.find(x=>x.id===l.userId) || {prenom:'',nom:'',numero:''};
+      return (l.label+' '+u.prenom+' '+u.nom+' '+u.numero).toLowerCase().includes(q);
     });
     $('#op-table').innerHTML = renderAdminTxTable(list.slice(0,60));
   };
@@ -945,13 +975,12 @@ function renderAdminOps(view){
 function modalNewClient(){
   openModal(`
     <h3>＋ Nouveau client</h3>
-    <div class="m-sub">Crée un compte au nom d'un client.</div>
+    <div class="m-sub">Crée un compte au nom d'un client. Son numéro de compte est généré automatiquement.</div>
     <div class="row-2">
       <div class="field"><label>Prénom</label><input id="nc-prenom" /></div>
       <div class="field"><label>Nom</label><input id="nc-nom" /></div>
     </div>
-    <div class="field"><label>Email</label><input id="nc-email" type="email" /></div>
-    <div class="field"><label>Mot de passe provisoire</label><input id="nc-pass" type="text" value="Nova123!" /></div>
+    <div class="field"><label>Mot de passe provisoire</label><input id="nc-pass" type="text" value="Compte123!" /></div>
     <div class="field"><label>Solde initial (€)</label><input id="nc-solde" type="number" value="0" min="0" step="0.01" /></div>
     <div class="m-actions">
       <button class="btn ghost" onclick="closeModal()">Annuler</button>
@@ -960,28 +989,34 @@ function modalNewClient(){
   `);
   $('#nc-go').addEventListener('click', async () => {
     const prenom = $('#nc-prenom').value.trim(), nom = $('#nc-nom').value.trim();
-    const email = $('#nc-email').value.trim().toLowerCase();
     const pass = $('#nc-pass').value;
     const solde = Math.round((parseFloat($('#nc-solde').value)||0)*100)/100;
     if (!prenom || !nom) return toast('Champs manquants','Prénom et nom obligatoires.','bad');
-    if (!/^\S+@\S+\.\S+$/.test(email)) return toast('Email invalide','Vérifie l\'adresse saisie.','bad');
-    if (users.some(x=>x.email===email)) return toast('Email déjà utilisé','Un compte existe avec cet email.','bad');
     if (pass.length<8) return toast('Mot de passe trop court','8 caractères minimum.','bad');
     const salt = uid();
-    const c = { id:uid(), prenom, nom, email, role:'client', salt, passHash:await hashPass(pass,salt), iban:genIban(), solde:0, statut:'actif', createdAt:Date.now() };
+    const c = { id:uid(), prenom, nom, numero:genNumero(), role:'client', salt, passHash:await hashPass(pass,salt), solde:0, statut:'actif', createdAt:Date.now() };
     users.push(c);
     if (solde>0) addOp(c,'depot','Dépôt d\'ouverture', solde);
     persist(); closeModal(); renderApp();
-    toast('Client créé ✅', prenom+' '+nom+' · '+email,'good');
+    openModal(`
+      <h3>✅ Compte créé</h3>
+      <div class="m-sub">Transmets ces identifiants à ${esc(prenom)} :</div>
+      <div class="card" style="padding:18px;text-align:center">
+        <div class="t-label" style="font-size:.72rem;justify-content:center">N° de compte</div>
+        <div class="mono" style="font-size:1.5rem;font-weight:800;letter-spacing:2px;margin-top:6px">${fmtNumero(c.numero)}</div>
+        <div class="muted" style="margin-top:8px">Mot de passe provisoire : <b>${esc(pass)}</b></div>
+      </div>
+      <div class="m-actions"><button class="btn" onclick="closeModal()">C'est noté</button></div>
+    `);
   });
 }
 
 function modalAdminMouvement(c){
   openModal(`
-    <h3>💶 Créditer / débiter</h3>
+    <h3>💶 Dépôt / Retrait</h3>
     <div class="m-sub">${esc(c.prenom+' '+c.nom)} — solde actuel : <b>${eur(c.solde)}</b></div>
     <div class="field"><label>Opération</label>
-      <select id="am-type"><option value="credit">Créditer (+)</option><option value="debit">Débiter (−)</option></select>
+      <select id="am-type"><option value="credit">Dépôt (+)</option><option value="debit">Retrait (−)</option></select>
     </div>
     <div class="field"><label>Montant (€)</label><input id="am-mnt" type="number" min="0.01" step="0.01" placeholder="100.00" /></div>
     <div class="field"><label>Motif</label><input id="am-note" placeholder="Geste commercial, régularisation…" /></div>
@@ -993,9 +1028,9 @@ function modalAdminMouvement(c){
   $('#am-go').addEventListener('click', () => {
     const kind = $('#am-type').value;
     const mnt = Math.round(parseFloat($('#am-mnt').value)*100)/100;
-    const note = $('#am-note').value.trim() || (kind==='credit'?'Crédit par l\'administrateur':'Débit par l\'administrateur');
+    const note = $('#am-note').value.trim() || (kind==='credit'?'Dépôt sur le compte':'Retrait du compte');
     if (!(mnt>0)) return toast('Montant invalide','Saisis un montant supérieur à 0.','bad');
-    if (kind==='debit' && mnt>c.solde) return toast('Solde insuffisant','Le débit dépasse le solde du client.','bad');
+    if (kind==='debit' && mnt>c.solde) return toast('Solde insuffisant','Le retrait dépasse le solde du client.','bad');
     addOp(c, kind==='credit'?'admin_credit':'admin_debit', note, kind==='credit'?mnt:-mnt, 'par '+me().prenom);
     persist(); closeModal(); renderApp();
     toast('Opération enregistrée ✅', (kind==='credit'?'+':'−')+eur(mnt)+' pour '+c.prenom,'good');
@@ -1006,12 +1041,11 @@ function modalClientDetail(c){
   const lg = userLedger(c.id);
   openModal(`
     <h3>👁️ ${esc(c.prenom+' '+c.nom)}</h3>
-    <div class="m-sub">${esc(c.email)} · client depuis le ${fmtDate(c.createdAt)}</div>
+    <div class="m-sub">N° ${fmtNumero(c.numero)} · client depuis le ${fmtDate(c.createdAt)}</div>
     <div class="grid cols-2" style="gap:12px">
       <div class="card" style="padding:16px"><div class="t-label" style="font-size:.72rem">Solde</div><div style="font-size:1.3rem;font-weight:800">${eur(c.solde)}</div></div>
       <div class="card" style="padding:16px"><div class="t-label" style="font-size:.72rem">Statut</div><div style="margin-top:6px">${c.statut==='actif'?'<span class="chip ok">● Actif</span>':'<span class="chip ko">● Bloqué</span>'}</div></div>
     </div>
-    <div class="muted mt mono" style="font-size:.78rem">${esc(c.iban)}</div>
     <div class="mt" style="max-height:240px;overflow:auto">${renderTxTable(lg.slice(0,10))}</div>
     <div class="m-actions"><button class="btn ghost" onclick="closeModal()">Fermer</button></div>
   `);
@@ -1020,7 +1054,7 @@ function modalClientDetail(c){
 function modalConfirmDelete(c, done){
   openModal(`
     <h3 class="danger-text">🗑️ Supprimer ce client ?</h3>
-    <div class="m-sub">${esc(c.prenom+' '+c.nom)} (${esc(c.email)}) et tout son historique seront définitivement supprimés.</div>
+    <div class="m-sub">${esc(c.prenom+' '+c.nom)} (n° ${fmtNumero(c.numero)}) et tout son historique seront définitivement supprimés.</div>
     <div class="m-actions">
       <button class="btn ghost" onclick="closeModal()">Annuler</button>
       <button class="btn danger" id="cd-go">Supprimer définitivement</button>
@@ -1029,6 +1063,7 @@ function modalConfirmDelete(c, done){
   $('#cd-go').addEventListener('click', () => {
     users = users.filter(x=>x.id!==c.id);
     ledger = ledger.filter(l=>l.userId!==c.id);
+    requests = requests.filter(r=>r.fromId!==c.id && r.toId!==c.id);
     persist(); closeModal(); done ? done() : renderApp();
     toast('Client supprimé', c.prenom+' '+c.nom,'bad');
   });
@@ -1052,8 +1087,7 @@ function renderProfil(view){
         <div class="card-head"><h3>Informations</h3></div>
         <div class="field"><label>Prénom</label><input id="pf-prenom" value="${esc(u.prenom)}" /></div>
         <div class="field"><label>Nom</label><input id="pf-nom" value="${esc(u.nom)}" /></div>
-        <div class="field"><label>Email</label><input value="${esc(u.email)}" disabled style="opacity:.6" /></div>
-        ${u.role==='client' ? `<div class="field"><label>IBAN</label><input class="mono" value="${esc(u.iban)}" disabled style="opacity:.6;font-size:.85rem" /></div>` : ''}
+        <div class="field"><label>N° de compte</label><input class="mono" value="${fmtNumero(u.numero)}" disabled style="opacity:.6;letter-spacing:1px" /></div>
         <button class="btn" id="pf-save">Enregistrer</button>
       </div>
       <div class="card">
@@ -1091,11 +1125,11 @@ $('#go-login').addEventListener('click', ()=>{ $('#form-signup').style.display='
 $('#btn-login').addEventListener('click', doLogin);
 $('#li-pass').addEventListener('keydown', e=>{ if (e.key==='Enter') doLogin(); });
 async function doLogin(){
-  const email = $('#li-email').value.trim().toLowerCase();
+  const numero = $('#li-numero').value.replace(/\D/g,'');
   const pass = $('#li-pass').value;
-  const u = users.find(x=>x.email===email);
+  const u = users.find(x=>x.numero===numero);
   if (!u || await hashPass(pass, u.salt) !== u.passHash)
-    return toast('Connexion refusée','Email ou mot de passe incorrect.','bad');
+    return toast('Connexion refusée','Numéro de compte ou mot de passe incorrect.','bad');
   session = { userId: u.id, ts: Date.now() }; persist();
   currentView = 'dash'; renderApp();
   toast('Bienvenue '+u.prenom+' 👋','Connexion réussie.','good');
@@ -1103,24 +1137,30 @@ async function doLogin(){
 
 $('#btn-signup').addEventListener('click', async () => {
   const prenom = $('#su-prenom').value.trim(), nom = $('#su-nom').value.trim();
-  const email = $('#su-email').value.trim().toLowerCase();
   const pass = $('#su-pass').value;
   if (!prenom || !nom) return toast('Champs manquants','Prénom et nom obligatoires.','bad');
-  if (!/^\S+@\S+\.\S+$/.test(email)) return toast('Email invalide','Vérifie l\'adresse saisie.','bad');
-  if (users.some(x=>x.email===email)) return toast('Email déjà utilisé','Connecte-toi plutôt.','bad');
   if (pass.length<8 || !/\d/.test(pass)) return toast('Mot de passe trop faible','8 caractères min. et 1 chiffre.','bad');
   const salt = uid();
-  const u = { id:uid(), prenom, nom, email, role:'client', salt, passHash:await hashPass(pass,salt), iban:genIban(), solde:0, statut:'actif', createdAt:Date.now() };
+  const u = { id:uid(), prenom, nom, numero:genNumero(), role:'client', salt, passHash:await hashPass(pass,salt), solde:0, statut:'actif', createdAt:Date.now() };
   users.push(u);
-  addOp(u,'depot','Prime de bienvenue 🎁', 100);
   session = { userId:u.id, ts:Date.now() }; persist();
   currentView='dash'; renderApp();
-  toast('Compte créé 🎉','100 € de prime de bienvenue offerts.','good');
+  openModal(`
+    <h3>🎉 Bienvenue, ${esc(prenom)} !</h3>
+    <div class="m-sub">Ton compte est ouvert. Voici ton numéro de compte — <b>note-le précieusement</b>, il te sert à te connecter et à recevoir des virements :</div>
+    <div class="card" style="padding:18px;text-align:center">
+      <div class="t-label" style="font-size:.72rem;justify-content:center">N° de compte</div>
+      <div class="mono" style="font-size:1.6rem;font-weight:800;letter-spacing:2px;margin-top:6px">${fmtNumero(u.numero)}</div>
+    </div>
+    <div class="m-actions"><button class="btn" onclick="closeModal()">C'est noté ✅</button></div>
+  `);
 });
 
 $('#btn-logout').addEventListener('click', () => {
   session = null; persist();
   currentView='dash';
+  $('#form-signup').style.display='none'; $('#form-login').style.display='block';
+  $('#li-numero').value=''; $('#li-pass').value='';
   show('#screen-auth');
   toast('À bientôt 👋','Tu as été déconnecté.','');
 });
