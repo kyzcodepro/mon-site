@@ -397,4 +397,25 @@ app.use((err, req, res, next) => {
   fail(res, 500, 'Erreur serveur : ' + err.message);
 });
 
-app.listen(PORT, () => console.log(`Kyz Account : http://localhost:${PORT} (API + site)`));
+/* ---------- migrations automatiques au démarrage ---------- */
+async function ensureSchema() {
+  const tryQ = async (sql) => { try { await pool.query(sql); return true; } catch (e) { return false; } };
+  try {
+    const [cols] = await pool.query("SHOW COLUMNS FROM demandes_virement LIKE 'rib'");
+    if (!cols.length) {
+      console.log('[migration] demandes_virement : passage au RIB libre…');
+      await tryQ('ALTER TABLE demandes_virement DROP FOREIGN KEY fk_dem_payeur');
+      await tryQ('ALTER TABLE demandes_virement DROP INDEX idx_payeur_statut');
+      await tryQ('ALTER TABLE demandes_virement DROP COLUMN payeur_id');
+      await pool.query("ALTER TABLE demandes_virement ADD COLUMN rib VARCHAR(40) NOT NULL DEFAULT '' AFTER demandeur_id");
+      await tryQ('ALTER TABLE demandes_virement ADD INDEX idx_statut (statut)');
+      console.log('[migration] demandes_virement : OK');
+    }
+    await tryQ("UPDATE operations SET meta = NULL WHERE meta LIKE 'par %'");
+  } catch (e) {
+    console.error('[migration] vérification impossible :', e.message);
+  }
+}
+
+ensureSchema().finally(() =>
+  app.listen(PORT, () => console.log(`Kyz Account : http://localhost:${PORT} (API + site)`)));

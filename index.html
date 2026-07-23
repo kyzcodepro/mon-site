@@ -530,11 +530,15 @@ function renderRequestsCard(u){
   return html + '</div>';
 }
 
-/* côté admin : demandes à traiter */
+/* côté admin : demandes à traiter (carte toujours visible) */
 function renderAdminRequestsCard(){
   const attente = state.requests.filter(r=>r.statut==='en_attente');
-  if (!attente.length) return '';
-  let html = '<div class="card mt fade-in"><div class="card-head"><h3>📥 Demandes de virement à traiter</h3><span class="hint">'+attente.length+' en cours</span></div>';
+  const traitees = state.requests.filter(r=>r.statut!=='en_attente').slice(0,4);
+  let html = '<div class="card mt fade-in"><div class="card-head"><h3>📥 Demandes de virement</h3><span class="hint">'+(attente.length?attente.length+' à traiter':'aucune en attente')+'</span></div>';
+  if (!attente.length && !traitees.length){
+    html += '<div class="empty" style="padding:24px"><div class="e-ico">📭</div>Aucune demande pour le moment.<br><span style="font-size:.82rem">Quand un client fera une demande de virement, elle apparaîtra ici.</span></div>';
+    return html + '</div>';
+  }
   html += attente.map(r=>`<div class="cell-flex" style="justify-content:space-between;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.05);flex-wrap:wrap;gap:8px">
       <div class="cell-flex"><div class="tx-ico">📤</div><div class="lbl">
         <b>${esc(r.fromName)} demande ${eur(r.montant)}</b>
@@ -547,6 +551,13 @@ function renderAdminRequestsCard(){
         <button class="btn small danger" data-req-ref="${r.id}">Refuser</button>
       </div>
     </div>`).join('');
+  if (traitees.length){
+    html += '<div class="muted" style="margin:12px 0 6px">Dernières traitées :</div>';
+    html += traitees.map(r=>`<div class="cell-flex" style="justify-content:space-between;padding:6px 0">
+        <div class="lbl"><b style="font-size:.9rem">${esc(r.fromName)} · ${eur(r.montant)}</b> <span class="muted mono" style="font-size:.78rem">${esc(r.rib)}</span></div>
+        <div>${REQ_STATUTS[r.statut]||''}</div>
+      </div>`).join('');
+  }
   return html + '</div>';
 }
 
