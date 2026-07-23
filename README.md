@@ -56,12 +56,25 @@ prêt à importer chez ton hébergeur (phpMyAdmin → Importer) :
 | `sessions` | jetons de connexion côté serveur |
 
 Le compte admin `0000000001` / `Admin123!` est créé à l'import.
-En attendant l'API serveur, le site fonctionne en localStorage.
+
+## 🚀 Serveur API (obligatoire)
+
+Le site est branché sur l'API `server/server.js` (Express + MySQL) : chaque
+création de client, dépôt, demande de virement… écrit dans la base.
+
+```bash
+cd server
+npm install
+cp .env.example .env   # renseigner les accès MySQL
+npm start              # sert le site + l'API sur le port 3000
+```
 
 ## Structure
 
 ```
-index.html        — application complète (HTML + CSS + JS, zéro dépendance)
+index.html        — interface (HTML + CSS + JS, appelle l'API /api/*)
+server/server.js  — API Express + MySQL (sert aussi le site)
+server/.env       — accès base de données (à créer depuis .env.example)
 sql/schema.sql    — schéma MySQL/MariaDB à importer chez l'hébergeur
 ```
 

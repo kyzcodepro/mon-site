@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Kyz Account — Gestion de comptes clients</title>
 <meta name="description" content="Kyz Account : application de gestion de comptes clients avec espace personnel, historique des opérations et administration." />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%236366f1'/%3E%3Ctext x='32' y='44' font-size='36' font-weight='800' font-family='Arial' fill='white' text-anchor='middle'%3EK%3C/text%3E%3C/svg%3E" />
 <style>
   :root{
     --bg:#0b0e17;            /* fond app */
@@ -315,8 +316,7 @@
 
 <script>
 /* =====================================================
-   Kyz Account — gestion de comptes clients
-   Données stockées en localStorage.
+   Kyz Account — front connecté à l'API (MySQL)
    ===================================================== */
 'use strict';
 
@@ -326,50 +326,17 @@ const $$ = s => Array.from(document.querySelectorAll(s));
 const eur = n => new Intl.NumberFormat('fr-FR',{style:'currency',currency:'EUR'}).format(n);
 const fmtDate = ts => new Date(ts).toLocaleDateString('fr-FR',{day:'2-digit',month:'short',year:'numeric'});
 const fmtDateTime = ts => new Date(ts).toLocaleDateString('fr-FR',{day:'2-digit',month:'short'}) + ' · ' + new Date(ts).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
-const uid = () => 'id_' + Math.random().toString(36).slice(2,10) + Date.now().toString(36);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-
-async function hashPass(pass, salt){
-  const data = new TextEncoder().encode(salt + '::' + pass);
-  if (crypto && crypto.subtle) {
-    const buf = await crypto.subtle.digest('SHA-256', data);
-    return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
-  }
-  // repli très simple si contexte non sécurisé
-  let h = 0; const str = salt + '::' + pass;
-  for (let i=0;i<str.length;i++){ h = ((h<<5)-h+str.charCodeAt(i))|0; }
-  return 'f' + Math.abs(h).toString(16);
-}
 const fmtNumero = n => String(n).replace(/(\d{2})(?=\d)/g,'$1 ').trim();
 
-/* ---------- persistance ---------- */
-const DB = {
-  load(key, def){ try { return JSON.parse(localStorage.getItem(key)) ?? def; } catch(e){ return def; } },
-  save(key, val){ localStorage.setItem(key, JSON.stringify(val)); },
-};
-let users = DB.load('ka_users', []);
-let ledger = DB.load('ka_ledger', []);   // {id,userId,ts,type,label,montant(signed),soldeApres,meta}
-let requests = DB.load('ka_requests', []); // {id,fromId(demandeur),toId(payeur),montant,note,statut,ts}
-let session = DB.load('ka_session', null);
-const persist = () => { DB.save('ka_users', users); DB.save('ka_ledger', ledger); DB.save('ka_requests', requests); DB.save('ka_session', session); };
-
-const genNumero = () => {
-  let n;
-  do {
-    n = String(Math.floor(Math.random()*9)+1);
-    for (let i=0;i<9;i++) n += Math.floor(Math.random()*10);
-  } while (users.some(u=>u.numero===n));
-  return n;
-};
-
-/* ---------- RIB complet (dérivé du numéro de compte) ---------- */
+/* ---------- RIB (affichage + pré-validation côté client) ---------- */
 const RIB_BANQUE = '30012', RIB_GUICHET = '00001';
 function cleRib(banque, guichet, compte){
   return String(97n - ((89n*BigInt(banque) + 15n*BigInt(guichet) + 3n*BigInt(compte)) % 97n)).padStart(2,'0');
 }
 function ibanFrom(banque, guichet, compte, cle){
   const bban = banque + guichet + compte + cle;
-  const key = String(98n - (BigInt(bban + '152700') % 97n)).padStart(2,'0'); // F=15, R=27
+  const key = String(98n - (BigInt(bban + '152700') % 97n)).padStart(2,'0');
   return 'FR' + key + bban;
 }
 function ribOf(u){
@@ -379,28 +346,42 @@ function ribOf(u){
   return { banque: RIB_BANQUE, guichet: RIB_GUICHET, compte, cle, iban,
            ibanFmt: iban.replace(/(.{4})/g,'$1 ').trim() };
 }
-/* Accepte un RIB complet (23 chiffres) ou un IBAN FR (27 caractères) */
-function parseRib(raw){
-  let s = String(raw||'').replace(/[\s.-]/g,'').toUpperCase();
-  if (s.startsWith('FR')) s = s.slice(4);
-  if (!/^\d{23}$/.test(s)) return { error:'format' };
-  const banque = s.slice(0,5), guichet = s.slice(5,10), compte = s.slice(10,21), cle = s.slice(21,23);
-  if (cleRib(banque, guichet, compte) !== cle) return { error:'cle' };
-  const numero = compte.replace(/^0/,'');
-  const user = users.find(x=>x.numero===numero && x.role==='client');
-  return { banque, guichet, compte, cle, numero, user };
+
+/* ---------- accès API ---------- */
+let token = localStorage.getItem('ka_token') || null;
+const state = { me:null, clients:[], ledger:[], requests:[] };
+
+async function api(path, opts){
+  const o = opts || {};
+  let r;
+  try {
+    r = await fetch('/api/' + path, {
+      method: o.method || (o.body ? 'POST' : 'GET'),
+      headers: Object.assign({'Content-Type':'application/json'}, token ? {Authorization:'Bearer '+token} : {}),
+      body: o.body ? JSON.stringify(o.body) : undefined,
+    });
+  } catch(e){
+    throw new Error('API injoignable : lance le serveur (server/server.js).');
+  }
+  let data = {};
+  try { data = await r.json(); } catch(e){}
+  if (r.status === 401 && path !== 'login'){ localLogout(); throw new Error(data.error || 'Session expirée'); }
+  if (!r.ok) throw new Error(data.error || ('Erreur ' + r.status));
+  return data;
 }
 
-/* ---------- amorçage : compte administrateur ---------- */
-async function seed(){
-  if (users.some(u=>u.role==='admin')) return;
-  const salt = uid();
-  users.push({
-    id: uid(), prenom:'Admin', nom:'Kyz', numero:'0000000001', role:'admin',
-    salt, passHash: await hashPass('Admin123!', salt),
-    solde: 0, statut:'actif', createdAt: Date.now(),
-  });
-  persist();
+async function loadState(){
+  const s = await api('state');
+  state.me = s.me; state.clients = s.clients || []; state.ledger = s.ledger || []; state.requests = s.requests || [];
+}
+
+function localLogout(){
+  token = null; localStorage.removeItem('ka_token');
+  state.me = null; state.clients = []; state.ledger = []; state.requests = [];
+  currentView = 'dash';
+  const n = $('#li-numero'), p2 = $('#li-pass');
+  if (n) n.value = ''; if (p2) p2.value = '';
+  show('#screen-auth');
 }
 
 /* ---------- toasts ---------- */
@@ -417,25 +398,7 @@ function openModal(html){ $('#modal-box').innerHTML = html; $('#modal-back').cla
 function closeModal(){ $('#modal-back').classList.remove('open'); }
 $('#modal-back').addEventListener('click', e => { if (e.target.id === 'modal-back') closeModal(); });
 
-/* ---------- helpers métier ---------- */
-const me = () => users.find(u => u.id === (session && session.userId));
-const clients = () => users.filter(u => u.role === 'client');
-const userLedger = id => ledger.filter(l => l.userId === id).sort((a,b)=>b.ts-a.ts);
-
-function addOp(user, type, label, montant, meta, ts){
-  user.solde = Math.round((user.solde + montant)*100)/100;
-  ledger.push({ id: uid(), userId: user.id, ts: ts||Date.now(), type, label, montant, soldeApres: user.solde, meta: meta||null });
-  if (ts && ts < Date.now()-60000) recalcLedger(user);
-}
-
-/* Recalcule la chaîne des soldes d'un compte (utile après une opération antidatée) */
-function recalcLedger(user){
-  const ops = ledger.filter(l=>l.userId===user.id).sort((a,b)=>a.ts-b.ts);
-  let bal = 0;
-  for (const op of ops){ bal = Math.round((bal + op.montant)*100)/100; op.soldeApres = bal; }
-  user.solde = bal;
-}
-
+/* ---------- styles d'opérations ---------- */
 const TX_STYLE = {
   depot:    { ico:'💰', chip:'ok',   name:'Dépôt' },
   paiement: { ico:'🛒', chip:'info', name:'Paiement' },
@@ -458,7 +421,7 @@ function show(screenId){
 }
 
 function renderNav(){
-  const u = me();
+  const u = state.me;
   const items = u.role === 'admin'
     ? [ ['dash','📊','Vue d\'ensemble'], ['clients','👥','Clients'], ['ops','🧾','Opérations'], ['profil','⚙️','Mon profil'] ]
     : [ ['dash','🏠','Tableau de bord'], ['historique','🧾','Historique'], ['profil','⚙️','Mon profil'] ];
@@ -474,8 +437,8 @@ function renderNav(){
 }
 
 function renderApp(){
-  const u = me();
-  if (!u){ session=null; persist(); show('#screen-auth'); return; }
+  const u = state.me;
+  if (!u){ localLogout(); return; }
   show('#screen-app'); renderNav();
   const view = $('#main-view');
   if (u.role === 'admin'){
@@ -488,6 +451,11 @@ function renderApp(){
     if (currentView === 'profil') return renderProfil(view);
     return renderClientDash(view);
   }
+}
+
+async function refresh(){
+  try { await loadState(); renderApp(); }
+  catch(e){ toast('Erreur', e.message, 'bad'); }
 }
 
 /* ---------- animation compteur ---------- */
@@ -505,8 +473,8 @@ function animateNum(el, target, format){
    VUE CLIENT
    ===================================================== */
 function renderClientDash(view){
-  const u = me();
-  const lg = userLedger(u.id);
+  const u = state.me;
+  const lg = state.ledger;
   const inMonth = lg.filter(l => l.montant>0 && Date.now()-l.ts < 30*86400000).reduce((s,l)=>s+l.montant,0);
   const outMonth = lg.filter(l => l.montant<0 && Date.now()-l.ts < 30*86400000).reduce((s,l)=>s-l.montant,0);
 
@@ -534,8 +502,8 @@ function renderClientDash(view){
     ${renderRequestsCard(u)}
 
     <div class="grid cols-3 mt fade-in">
-      <div class="card tile"><div class="t-label">📥 Entrées (30 j)</div><div class="t-value" style="color:var(--good)">+${eur(inMonth).replace(/ €/,' €')}</div><div class="t-delta">revenus et virements reçus</div></div>
-      <div class="card tile"><div class="t-label">📤 Sorties (30 j)</div><div class="t-value" style="color:var(--bad)">−${eur(outMonth).replace(/ €/,' €')}</div><div class="t-delta">paiements et virements émis</div></div>
+      <div class="card tile"><div class="t-label">📥 Entrées (30 j)</div><div class="t-value" style="color:var(--good)">+${eur(inMonth).replace(/ €/,' €')}</div><div class="t-delta">revenus et virements reçus</div></div>
+      <div class="card tile"><div class="t-label">📤 Sorties (30 j)</div><div class="t-value" style="color:var(--bad)">−${eur(outMonth).replace(/ €/,' €')}</div><div class="t-delta">paiements et virements émis</div></div>
       <div class="card tile"><div class="t-label">🧾 Opérations</div><div class="t-value">${lg.length}</div><div class="t-delta">depuis l'ouverture</div></div>
     </div>
 
@@ -569,55 +537,45 @@ function renderClientDash(view){
 
 /* ---------- demandes de virement ---------- */
 function renderRequestsCard(u){
-  const recues = requests.filter(r=>r.toId===u.id && r.statut==='en_attente').sort((a,b)=>b.ts-a.ts);
-  const envoyees = requests.filter(r=>r.fromId===u.id).sort((a,b)=>b.ts-a.ts).slice(0,4);
+  const recues = state.requests.filter(r=>r.toId===u.id && r.statut==='en_attente');
+  const envoyees = state.requests.filter(r=>r.fromId===u.id).slice(0,4);
   if (!recues.length && !envoyees.length) return '';
   const STATUTS = { en_attente:'<span class="chip warn">⏳ En attente</span>', acceptée:'<span class="chip ok">✔ Acceptée</span>', refusée:'<span class="chip ko">✖ Refusée</span>' };
   let html = '<div class="card mt fade-in"><div class="card-head"><h3>Demandes de virement</h3></div>';
   if (recues.length){
     html += '<div class="muted" style="margin-bottom:10px">On te demande :</div>';
-    html += recues.map(r=>{
-      const from = users.find(x=>x.id===r.fromId) || {prenom:'?',nom:''};
-      return `<div class="cell-flex" style="justify-content:space-between;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.05)">
-        <div class="cell-flex"><div class="tx-ico">📥</div><div class="lbl"><b>${esc(from.prenom+' '+from.nom)} demande ${eur(r.montant)}</b><span>${r.note?esc(r.note)+' · ':''}${fmtDateTime(r.ts)}</span></div></div>
+    html += recues.map(r=>`<div class="cell-flex" style="justify-content:space-between;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.05)">
+        <div class="cell-flex"><div class="tx-ico">📥</div><div class="lbl"><b>${esc(r.fromName)} demande ${eur(r.montant)}</b><span>${r.note?esc(r.note)+' · ':''}${fmtDateTime(r.ts)}</span></div></div>
         <div style="white-space:nowrap">
           <button class="btn small success" data-req-acc="${r.id}">Payer</button>
           <button class="btn small danger" data-req-ref="${r.id}">Refuser</button>
         </div>
-      </div>`;
-    }).join('');
+      </div>`).join('');
   }
   if (envoyees.length){
     html += '<div class="muted" style="margin:14px 0 10px">Tes demandes :</div>';
-    html += envoyees.map(r=>{
-      const to = users.find(x=>x.id===r.toId) || {prenom:'?',nom:''};
-      return `<div class="cell-flex" style="justify-content:space-between;padding:8px 0">
-        <div class="lbl"><b style="font-size:.92rem">${eur(r.montant)} à ${esc(to.prenom+' '+to.nom)}</b> <span class="muted">· ${fmtDateTime(r.ts)}</span></div>
+    html += envoyees.map(r=>`<div class="cell-flex" style="justify-content:space-between;padding:8px 0">
+        <div class="lbl"><b style="font-size:.92rem">${eur(r.montant)} à ${esc(r.toName)}</b> <span class="muted">· ${fmtDateTime(r.ts)}</span></div>
         <div>${STATUTS[r.statut]||''}</div>
-      </div>`;
-    }).join('');
+      </div>`).join('');
   }
   return html + '</div>';
 }
 
 function bindRequestActions(){
-  $$('[data-req-acc]').forEach(b=>b.addEventListener('click',()=>{
-    const r = requests.find(x=>x.id===b.dataset.reqAcc); if (!r || r.statut!=='en_attente') return;
-    const payeur = users.find(x=>x.id===r.toId), benef = users.find(x=>x.id===r.fromId);
-    if (!payeur || !benef) return;
-    if (benef.statut==='bloqué') return toast('Impossible','Le compte du bénéficiaire est suspendu.','bad');
-    if (r.montant > payeur.solde) return toast('Solde insuffisant','Ton solde ne couvre pas cette demande.','bad');
-    addOp(payeur,'virement_out','Virement vers '+benef.prenom+' '+benef.nom, -r.montant, r.note||'demande acceptée');
-    addOp(benef,'virement_in','Virement de '+payeur.prenom+' '+payeur.nom, r.montant, r.note||'demande acceptée');
-    r.statut = 'acceptée';
-    persist(); renderApp();
-    toast('Demande payée ✅', eur(r.montant)+' → '+benef.prenom,'good');
+  $$('[data-req-acc]').forEach(b=>b.addEventListener('click', async ()=>{
+    try {
+      await api('demandes/'+b.dataset.reqAcc+'/accept', {method:'POST'});
+      await refresh();
+      toast('Demande payée ✅','Le virement a été effectué.','good');
+    } catch(e){ toast('Impossible', e.message, 'bad'); }
   }));
-  $$('[data-req-ref]').forEach(b=>b.addEventListener('click',()=>{
-    const r = requests.find(x=>x.id===b.dataset.reqRef); if (!r || r.statut!=='en_attente') return;
-    r.statut = 'refusée';
-    persist(); renderApp();
-    toast('Demande refusée','','');
+  $$('[data-req-ref]').forEach(b=>b.addEventListener('click', async ()=>{
+    try {
+      await api('demandes/'+b.dataset.reqRef+'/refuse', {method:'POST'});
+      await refresh();
+      toast('Demande refusée','','');
+    } catch(e){ toast('Impossible', e.message, 'bad'); }
   }));
 }
 
@@ -639,7 +597,6 @@ function renderTxTable(list){
 }
 
 function renderHistorique(view){
-  const u = me();
   view.innerHTML = `
     <div class="topbar fade-in">
       <div>
@@ -661,7 +618,7 @@ function renderHistorique(view){
   $('#mn') && $('#mn').addEventListener('click',()=>$('#sidebar').classList.toggle('open'));
   let f='all', q='';
   const upd = () => {
-    let list = userLedger(u.id);
+    let list = state.ledger;
     if (f==='in') list = list.filter(l=>l.montant>0);
     if (f==='out') list = list.filter(l=>l.montant<0);
     if (q) list = list.filter(l => (l.label+' '+(l.meta||'')).toLowerCase().includes(q));
@@ -674,16 +631,12 @@ function renderHistorique(view){
   upd();
 }
 
-/* ---------- graphique solde (série unique, tooltip au survol) ---------- */
+/* ---------- graphique solde ---------- */
 function balanceSeries(u, days){
   const from = Date.now() - days*86400000;
-  const list = ledger.filter(l=>l.userId===u.id).sort((a,b)=>a.ts-b.ts);
+  const list = state.ledger.slice().sort((a,b)=>a.ts-b.ts);
   const pts = [];
-  let bal = 0;
-  for (const l of list){
-    bal = l.soldeApres;
-    if (l.ts >= from) pts.push({ ts:l.ts, v:l.soldeApres });
-  }
+  for (const l of list){ if (l.ts >= from) pts.push({ ts:l.ts, v:l.soldeApres }); }
   const before = list.filter(l=>l.ts<from);
   const start = before.length ? before[before.length-1].soldeApres : 0;
   pts.unshift({ ts: from, v: start });
@@ -691,6 +644,7 @@ function balanceSeries(u, days){
   return pts;
 }
 
+let drawChartStatic = () => {};
 function drawChart(u){
   const cv = $('#chart'); if (!cv) return;
   const tip = $('#viz-tip');
@@ -708,21 +662,6 @@ function drawChart(u){
   const X = t => PAD.l + (t-x0)/(x1-x0 || 1) * (W-PAD.l-PAD.r);
   const Y = v => PAD.t + (1-(v-y0)/(y1-y0)) * (H-PAD.t-PAD.b);
 
-  ctx.clearRect(0,0,W,H);
-  // grille horizontale discrète + repères
-  ctx.strokeStyle = 'rgba(255,255,255,.06)'; ctx.lineWidth = 1;
-  ctx.fillStyle = 'rgba(154,165,189,.8)'; ctx.font = '11px system-ui'; ctx.textAlign='right';
-  const steps = 4;
-  for (let i=0;i<=steps;i++){
-    const v = y0 + (y1-y0)*i/steps, y = Y(v);
-    ctx.beginPath(); ctx.moveTo(PAD.l,y); ctx.lineTo(W-PAD.r,y); ctx.stroke();
-    ctx.fillText(Math.round(v).toLocaleString('fr-FR')+' €', PAD.l-8, y+4);
-  }
-  // dates min/max
-  ctx.textAlign='left';  ctx.fillText(fmtDate(x0), PAD.l, H-8);
-  ctx.textAlign='right'; ctx.fillText(fmtDate(x1), W-PAD.r, H-8);
-
-  // aire + ligne (marches: le solde est constant entre opérations)
   const col = getComputedStyle(document.documentElement).getPropertyValue('--series-1').trim() || '#3987e5';
   const path = new Path2D();
   pts.forEach((p,i)=>{
@@ -734,41 +673,9 @@ function drawChart(u){
   area.lineTo(X(x1), Y(y0)); area.lineTo(X(x0), Y(y0)); area.closePath();
   const grad = ctx.createLinearGradient(0,PAD.t,0,H);
   grad.addColorStop(0, col+'55'); grad.addColorStop(1, col+'00');
-  ctx.fillStyle = grad; ctx.fill(area);
-  ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.lineJoin='round'; ctx.stroke(path);
+  const steps = 4;
 
-  // interaction : crosshair + tooltip
-  cv.onmousemove = e => {
-    const r = cv.getBoundingClientRect();
-    const mx = e.clientX - r.left;
-    let best = pts[0], bd = Infinity;
-    for (const p of pts){ const d = Math.abs(X(p.ts)-mx); if (d<bd){ bd=d; best=p; } }
-    // valeur du solde à cet instant (dernier point <= souris)
-    const t = x0 + (mx-PAD.l)/((W-PAD.l-PAD.r)||1)*(x1-x0);
-    let cur = pts[0];
-    for (const p of pts){ if (p.ts<=t) cur = p; }
-    // redraw + crosshair
-    drawChart._raf && cancelAnimationFrame(drawChart._raf);
-    drawChart._raf = requestAnimationFrame(()=>{
-      drawChartStatic(u); // fond
-      const c2 = cv.getContext('2d');
-      const xx = Math.max(PAD.l, Math.min(W-PAD.r, mx));
-      c2.save(); c2.scale(1,1);
-      c2.strokeStyle='rgba(255,255,255,.25)'; c2.setLineDash([4,4]); c2.lineWidth=1;
-      c2.beginPath(); c2.moveTo(xx*dpr/dpr,PAD.t); c2.lineTo(xx,H-PAD.b); c2.stroke(); c2.setLineDash([]);
-      c2.fillStyle=col; c2.strokeStyle='#0b0e17';
-      c2.beginPath(); c2.arc(xx, Y(cur.v), 5, 0, 7); c2.fill(); c2.lineWidth=2; c2.stroke();
-      c2.restore();
-    });
-    tip.style.left = Math.max(70, Math.min(W-70, mx)) + 'px';
-    tip.style.top = (Y(cur.v)) + 'px';
-    tip.style.opacity = 1;
-    tip.innerHTML = '<b>'+eur(cur.v)+'</b><span>'+fmtDate(Math.min(t,Date.now()))+'</span>';
-  };
-  cv.onmouseleave = () => { tip.style.opacity = 0; drawChartStatic(u); };
-
-  // version statique réutilisable pour le redraw du crosshair
-  drawChartStatic = user => {
+  drawChartStatic = () => {
     const c = cv.getContext('2d');
     c.setTransform(dpr,0,0,dpr,0,0);
     c.clearRect(0,0,W,H);
@@ -782,14 +689,38 @@ function drawChart(u){
     c.textAlign='left'; c.fillText(fmtDate(x0), PAD.l, H-8);
     c.textAlign='right'; c.fillText(fmtDate(x1), W-PAD.r, H-8);
     c.fillStyle=grad; c.fill(area);
-    c.strokeStyle=col; c.lineWidth=2; c.stroke(path);
+    c.strokeStyle=col; c.lineWidth=2; c.lineJoin='round'; c.stroke(path);
   };
+  drawChartStatic();
+
+  let raf = null;
+  cv.onmousemove = e => {
+    const r = cv.getBoundingClientRect();
+    const mx = e.clientX - r.left;
+    const t = x0 + (mx-PAD.l)/((W-PAD.l-PAD.r)||1)*(x1-x0);
+    let cur = pts[0];
+    for (const p of pts){ if (p.ts<=t) cur = p; }
+    raf && cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(()=>{
+      drawChartStatic();
+      const c2 = cv.getContext('2d');
+      const xx = Math.max(PAD.l, Math.min(W-PAD.r, mx));
+      c2.strokeStyle='rgba(255,255,255,.25)'; c2.setLineDash([4,4]); c2.lineWidth=1;
+      c2.beginPath(); c2.moveTo(xx,PAD.t); c2.lineTo(xx,H-PAD.b); c2.stroke(); c2.setLineDash([]);
+      c2.fillStyle=col; c2.strokeStyle='#0b0e17';
+      c2.beginPath(); c2.arc(xx, Y(cur.v), 5, 0, 7); c2.fill(); c2.lineWidth=2; c2.stroke();
+    });
+    tip.style.left = Math.max(70, Math.min(W-70, mx)) + 'px';
+    tip.style.top = (Y(cur.v)) + 'px';
+    tip.style.opacity = 1;
+    tip.innerHTML = '<b>'+eur(cur.v)+'</b><span>'+fmtDate(Math.min(t,Date.now()))+'</span>';
+  };
+  cv.onmouseleave = () => { tip.style.opacity = 0; drawChartStatic(); };
 }
-let drawChartStatic = () => {};
 
 /* ---------- modales client ---------- */
 function modalRib(){
-  const u = me();
+  const u = state.me;
   const r = ribOf(u);
   openModal(`
     <h3>📄 Mon RIB</h3>
@@ -819,7 +750,6 @@ function modalRib(){
 }
 
 function modalDemande(){
-  const u = me();
   openModal(`
     <h3>📥 Demande de virement</h3>
     <div class="m-sub">Demande de l'argent à un autre compte : saisis son RIB complet, il devra accepter avant que le virement parte.</div>
@@ -831,20 +761,14 @@ function modalDemande(){
       <button class="btn" id="d-go">Envoyer la demande</button>
     </div>
   `);
-  $('#d-go').addEventListener('click', () => {
-    const r = parseRib($('#d-dest').value);
+  $('#d-go').addEventListener('click', async () => {
     const mnt = Math.round(parseFloat($('#d-mnt').value)*100)/100;
-    const note = $('#d-note').value.trim();
-    if (r.error==='format') return toast('RIB invalide','Saisis un IBAN FR complet ou les 23 chiffres du RIB.','bad');
-    if (r.error==='cle') return toast('Clé RIB incorrecte','Vérifie le RIB saisi (erreur de frappe ?).','bad');
-    const dest = r.user;
-    if (!dest) return toast('Compte introuvable','Aucun compte ne correspond à ce RIB.','bad');
-    if (dest.id===u.id) return toast('Demande impossible','Tu ne peux pas te faire une demande à toi-même.','bad');
-    if (dest.statut==='bloqué') return toast('Compte bloqué','Ce compte est suspendu.','bad');
     if (!(mnt>0)) return toast('Montant invalide','Saisis un montant supérieur à 0.','bad');
-    requests.push({ id:uid(), fromId:u.id, toId:dest.id, montant:mnt, note:note||null, statut:'en_attente', ts:Date.now() });
-    persist(); closeModal(); renderApp();
-    toast('Demande envoyée ⏳', eur(mnt)+' demandés à '+dest.prenom+' '+dest.nom,'good');
+    try {
+      const r = await api('demandes', { body: { rib: $('#d-dest').value, montant: mnt, motif: $('#d-note').value.trim() } });
+      closeModal(); await refresh();
+      toast('Demande envoyée ⏳', eur(mnt)+' demandés à '+(r.payeurNom||''),'good');
+    } catch(e){ toast('Impossible', e.message, 'bad'); }
   });
 }
 
@@ -852,9 +776,9 @@ function modalDemande(){
    VUE ADMIN
    ===================================================== */
 function renderAdminDash(view){
-  const cl = clients();
+  const cl = state.clients;
   const total = cl.reduce((s,c)=>s+c.solde,0);
-  const today = ledger.filter(l=>Date.now()-l.ts<86400000).length;
+  const today = state.ledger.filter(l=>Date.now()-l.ts<86400000).length;
   const bloques = cl.filter(c=>c.statut==='bloqué').length;
   view.innerHTML = `
     <div class="topbar fade-in">
@@ -868,11 +792,11 @@ function renderAdminDash(view){
     <div class="grid cols-3 fade-in">
       <div class="card tile"><div class="t-label">👥 Clients</div><div class="t-value" id="st-cl">0</div><div class="t-delta">${bloques?bloques+' bloqué'+(bloques>1?'s':''):'tous actifs'}</div></div>
       <div class="card tile"><div class="t-label">💶 Encours total</div><div class="t-value" id="st-total">0</div><div class="t-delta">somme des soldes clients</div></div>
-      <div class="card tile"><div class="t-label">🧾 Opérations (24 h)</div><div class="t-value" id="st-ops">0</div><div class="t-delta">${ledger.length} au total</div></div>
+      <div class="card tile"><div class="t-label">🧾 Opérations (24 h)</div><div class="t-value" id="st-ops">0</div><div class="t-delta">${state.ledger.length} récentes</div></div>
     </div>
     <div class="card mt fade-in">
       <div class="card-head"><h3>Dernières opérations (tous clients)</h3><button class="btn small ghost" id="see-ops">Tout voir →</button></div>
-      ${renderAdminTxTable(ledger.slice().sort((a,b)=>b.ts-a.ts).slice(0,6))}
+      ${renderAdminTxTable(state.ledger.slice(0,6))}
     </div>
   `;
   $('#mn') && $('#mn').addEventListener('click',()=>$('#sidebar').classList.toggle('open'));
@@ -888,10 +812,10 @@ function renderAdminTxTable(list){
   return `<div class="tbl-wrap"><table>
     <thead><tr><th>Client</th><th>Opération</th><th>Date</th><th style="text-align:right">Montant</th></tr></thead>
     <tbody>${list.map(l=>{
-      const u = users.find(x=>x.id===l.userId) || {prenom:'?',nom:''};
+      const nomC = (l.prenom||'?')+' '+(l.nom||'');
       const st = txStyle(l.type);
       return `<tr>
-        <td><div class="cell-flex"><div class="avatar" style="width:32px;height:32px;font-size:.8rem">${esc((u.prenom[0]||'')+(u.nom[0]||''))}</div><div class="lbl"><b>${esc(u.prenom+' '+u.nom)}</b></div></div></td>
+        <td><div class="cell-flex"><div class="avatar" style="width:32px;height:32px;font-size:.8rem">${esc((l.prenom||'?')[0]+((l.nom||'')[0]||''))}</div><div class="lbl"><b>${esc(nomC)}</b></div></div></td>
         <td><div class="cell-flex"><div class="tx-ico">${st.ico}</div><div class="lbl"><b>${esc(l.label)}</b><span><span class="chip ${st.chip}" style="margin-top:2px">${st.name}</span></span></div></div></td>
         <td class="muted">${fmtDateTime(l.ts)}</td>
         <td style="text-align:right" class="amount ${l.montant>=0?'pos':'neg'}">${l.montant>=0?'+':''}${eur(l.montant)}</td>
@@ -906,7 +830,7 @@ function renderAdminClients(view){
       <div>
         <button class="menu-btn" id="mn">☰</button>
         <h1 style="display:inline-block;vertical-align:middle">Clients</h1>
-        <div class="sub">Créer, créditer, bloquer, gérer.</div>
+        <div class="sub">Créer, déposer, retirer, bloquer, gérer.</div>
       </div>
       <div class="filters">
         <div class="search">🔎 <input id="cl-q" placeholder="Nom, n° de compte…" /></div>
@@ -918,7 +842,7 @@ function renderAdminClients(view){
   $('#mn') && $('#mn').addEventListener('click',()=>$('#sidebar').classList.toggle('open'));
   let q='';
   const upd = () => {
-    let list = clients().sort((a,b)=>b.createdAt-a.createdAt);
+    let list = state.clients;
     if (q) list = list.filter(c => (c.prenom+' '+c.nom+' '+c.numero).toLowerCase().includes(q));
     $('#cl-table').innerHTML = !list.length
       ? `<div class="empty"><div class="e-ico">👥</div>Aucun client trouvé.</div>`
@@ -938,17 +862,20 @@ function renderAdminClients(view){
             </td>
           </tr>`).join('')}</tbody>
       </table></div>`;
-    $$('#cl-table [data-act]').forEach(b=>b.addEventListener('click',()=>{
-      const c = users.find(x=>x.id===b.dataset.id); if (!c) return;
+    $$('#cl-table [data-act]').forEach(b=>b.addEventListener('click', async ()=>{
+      const c = state.clients.find(x=>String(x.id)===String(b.dataset.id)); if (!c) return;
       const act = b.dataset.act;
       if (act==='voir') return modalClientDetail(c);
       if (act==='mouv') return modalAdminMouvement(c);
       if (act==='lock'){
-        c.statut = c.statut==='actif' ? 'bloqué' : 'actif';
-        persist(); upd();
-        return toast(c.statut==='bloqué'?'Compte bloqué 🔒':'Compte réactivé 🔓', c.prenom+' '+c.nom, c.statut==='bloqué'?'bad':'good');
+        try {
+          const r = await api('clients/'+c.id+'/lock', {method:'POST'});
+          await refresh();
+          toast(r.statut==='bloqué'?'Compte bloqué 🔒':'Compte réactivé 🔓', c.prenom+' '+c.nom, r.statut==='bloqué'?'bad':'good');
+        } catch(e){ toast('Impossible', e.message, 'bad'); }
+        return;
       }
-      if (act==='del') return modalConfirmDelete(c, upd);
+      if (act==='del') return modalConfirmDelete(c);
     }));
   };
   $('#cl-q').addEventListener('input', e=>{ q=e.target.value.toLowerCase(); upd(); });
@@ -971,11 +898,8 @@ function renderAdminOps(view){
   $('#mn') && $('#mn').addEventListener('click',()=>$('#sidebar').classList.toggle('open'));
   let q='';
   const upd = () => {
-    let list = ledger.slice().sort((a,b)=>b.ts-a.ts);
-    if (q) list = list.filter(l=>{
-      const u = users.find(x=>x.id===l.userId) || {prenom:'',nom:'',numero:''};
-      return (l.label+' '+u.prenom+' '+u.nom+' '+u.numero).toLowerCase().includes(q);
-    });
+    let list = state.ledger;
+    if (q) list = list.filter(l => (l.label+' '+(l.prenom||'')+' '+(l.nom||'')).toLowerCase().includes(q));
     $('#op-table').innerHTML = renderAdminTxTable(list.slice(0,60));
   };
   $('#op-q').addEventListener('input', e=>{ q=e.target.value.toLowerCase(); upd(); });
@@ -1004,23 +928,23 @@ function modalNewClient(){
     const solde = Math.round((parseFloat($('#nc-solde').value)||0)*100)/100;
     if (!prenom || !nom) return toast('Champs manquants','Prénom et nom obligatoires.','bad');
     if (pass.length<8) return toast('Mot de passe trop court','8 caractères minimum.','bad');
-    const salt = uid();
-    const c = { id:uid(), prenom, nom, numero:genNumero(), role:'client', salt, passHash:await hashPass(pass,salt), solde:0, statut:'actif', createdAt:Date.now() };
-    users.push(c);
-    if (solde>0) addOp(c,'depot','Dépôt d\'ouverture', solde);
-    persist(); closeModal(); renderApp();
-    openModal(`
-      <h3>✅ Compte créé</h3>
-      <div class="m-sub">Transmets ces identifiants à ${esc(prenom)} :</div>
-      <div class="card" style="padding:18px;text-align:center">
-        <div class="t-label" style="font-size:.72rem;justify-content:center">N° de compte</div>
-        <div class="mono" style="font-size:1.5rem;font-weight:800;letter-spacing:2px;margin-top:6px">${fmtNumero(c.numero)}</div>
-        <div class="t-label" style="font-size:.72rem;justify-content:center;margin-top:10px">IBAN</div>
-        <div class="mono" style="font-size:.88rem;font-weight:700;margin-top:4px">${ribOf(c).ibanFmt}</div>
-        <div class="muted" style="margin-top:8px">Mot de passe provisoire : <b>${esc(pass)}</b></div>
-      </div>
-      <div class="m-actions"><button class="btn" onclick="closeModal()">C'est noté</button></div>
-    `);
+    try {
+      const r = await api('clients', { body: { prenom, nom, pass, solde } });
+      closeModal(); await refresh();
+      openModal(`
+        <h3>✅ Compte créé</h3>
+        <div class="m-sub">Transmets ces identifiants à ${esc(prenom)} :</div>
+        <div class="card" style="padding:18px;text-align:center">
+          <div class="t-label" style="font-size:.72rem;justify-content:center">N° de compte</div>
+          <div class="mono" style="font-size:1.5rem;font-weight:800;letter-spacing:2px;margin-top:6px">${fmtNumero(r.numero)}</div>
+          <div class="t-label" style="font-size:.72rem;justify-content:center;margin-top:10px">IBAN</div>
+          <div class="mono" style="font-size:.88rem;font-weight:700;margin-top:4px">${r.iban.replace(/(.{4})/g,'$1 ').trim()}</div>
+          <div class="muted" style="margin-top:8px">Mot de passe provisoire : <b>${esc(pass)}</b></div>
+        </div>
+        <div class="m-actions"><button class="btn" onclick="closeModal()">C'est noté</button></div>
+      `);
+      toast('Client créé ✅', prenom+' '+nom,'good');
+    } catch(e){ toast('Impossible', e.message, 'bad'); }
   });
 }
 
@@ -1042,29 +966,22 @@ function modalAdminMouvement(c){
   const dInput = $('#am-date');
   dInput.max = new Date().toISOString().slice(0,10);
   dInput.value = dInput.max;
-  $('#am-go').addEventListener('click', () => {
+  $('#am-go').addEventListener('click', async () => {
     const kind = $('#am-type').value;
     const mnt = Math.round(parseFloat($('#am-mnt').value)*100)/100;
-    const note = $('#am-note').value.trim() || (kind==='credit'?'Dépôt sur le compte':'Retrait du compte');
     if (!(mnt>0)) return toast('Montant invalide','Saisis un montant supérieur à 0.','bad');
-    if (kind==='debit' && mnt>c.solde) return toast('Solde insuffisant','Le retrait dépasse le solde du client.','bad');
-    // date choisie : aujourd'hui → horodatage courant ; date passée → midi ce jour-là
-    let ts = Date.now();
-    const dv = dInput.value;
-    if (dv && dv !== dInput.max){
-      const d = new Date(dv + 'T12:00:00');
-      if (isNaN(d.getTime())) return toast('Date invalide','Vérifie la date saisie.','bad');
-      if (d.getTime() > Date.now()) return toast('Date future refusée','Choisis une date passée ou aujourd\'hui.','bad');
-      ts = d.getTime();
-    }
-    addOp(c, kind==='credit'?'admin_credit':'admin_debit', note, kind==='credit'?mnt:-mnt, 'par '+me().prenom, ts);
-    persist(); closeModal(); renderApp();
-    toast('Opération enregistrée ✅', (kind==='credit'?'+':'−')+eur(mnt)+' pour '+c.prenom + (ts!==Date.now()&&dv!==dInput.max?' (le '+fmtDate(ts)+')':''),'good');
+    try {
+      await api('clients/'+c.id+'/mouvement', { body: { kind, montant: mnt, date: dInput.value, motif: $('#am-note').value.trim() } });
+      closeModal(); await refresh();
+      toast('Opération enregistrée ✅', (kind==='credit'?'+':'−')+eur(mnt)+' pour '+c.prenom,'good');
+    } catch(e){ toast('Impossible', e.message, 'bad'); }
   });
 }
 
-function modalClientDetail(c){
-  const lg = userLedger(c.id);
+async function modalClientDetail(c){
+  let lg = [];
+  try { lg = (await api('clients/'+c.id+'/operations')).ledger; }
+  catch(e){ return toast('Erreur', e.message, 'bad'); }
   openModal(`
     <h3>👁️ ${esc(c.prenom+' '+c.nom)}</h3>
     <div class="m-sub">N° ${fmtNumero(c.numero)} · client depuis le ${fmtDate(c.createdAt)}</div>
@@ -1072,12 +989,13 @@ function modalClientDetail(c){
       <div class="card" style="padding:16px"><div class="t-label" style="font-size:.72rem">Solde</div><div style="font-size:1.3rem;font-weight:800">${eur(c.solde)}</div></div>
       <div class="card" style="padding:16px"><div class="t-label" style="font-size:.72rem">Statut</div><div style="margin-top:6px">${c.statut==='actif'?'<span class="chip ok">● Actif</span>':'<span class="chip ko">● Bloqué</span>'}</div></div>
     </div>
+    <div class="muted mt mono" style="font-size:.78rem">IBAN : ${ribOf(c).ibanFmt}</div>
     <div class="mt" style="max-height:240px;overflow:auto">${renderTxTable(lg.slice(0,10))}</div>
     <div class="m-actions"><button class="btn ghost" onclick="closeModal()">Fermer</button></div>
   `);
 }
 
-function modalConfirmDelete(c, done){
+function modalConfirmDelete(c){
   openModal(`
     <h3 class="danger-text">🗑️ Supprimer ce client ?</h3>
     <div class="m-sub">${esc(c.prenom+' '+c.nom)} (n° ${fmtNumero(c.numero)}) et tout son historique seront définitivement supprimés.</div>
@@ -1086,12 +1004,12 @@ function modalConfirmDelete(c, done){
       <button class="btn danger" id="cd-go">Supprimer définitivement</button>
     </div>
   `);
-  $('#cd-go').addEventListener('click', () => {
-    users = users.filter(x=>x.id!==c.id);
-    ledger = ledger.filter(l=>l.userId!==c.id);
-    requests = requests.filter(r=>r.fromId!==c.id && r.toId!==c.id);
-    persist(); closeModal(); done ? done() : renderApp();
-    toast('Client supprimé', c.prenom+' '+c.nom,'bad');
+  $('#cd-go').addEventListener('click', async () => {
+    try {
+      await api('clients/'+c.id, {method:'DELETE'});
+      closeModal(); await refresh();
+      toast('Client supprimé', c.prenom+' '+c.nom,'bad');
+    } catch(e){ toast('Impossible', e.message, 'bad'); }
   });
 }
 
@@ -1099,7 +1017,7 @@ function modalConfirmDelete(c, done){
    PROFIL (commun)
    ===================================================== */
 function renderProfil(view){
-  const u = me();
+  const u = state.me;
   view.innerHTML = `
     <div class="topbar fade-in">
       <div>
@@ -1127,19 +1045,21 @@ function renderProfil(view){
     </div>
   `;
   $('#mn') && $('#mn').addEventListener('click',()=>$('#sidebar').classList.toggle('open'));
-  $('#pf-save').addEventListener('click', () => {
+  $('#pf-save').addEventListener('click', async () => {
     const p = $('#pf-prenom').value.trim(), n = $('#pf-nom').value.trim();
     if (!p || !n) return toast('Champs manquants','Prénom et nom obligatoires.','bad');
-    u.prenom = p; u.nom = n; persist(); renderNav();
-    toast('Profil mis à jour ✅','','good');
+    try {
+      await api('profil', { method:'PUT', body:{ prenom:p, nom:n } });
+      await refresh();
+      toast('Profil mis à jour ✅','','good');
+    } catch(e){ toast('Impossible', e.message, 'bad'); }
   });
   $('#pw-save').addEventListener('click', async () => {
-    const oldp = $('#pw-old').value, newp = $('#pw-new').value;
-    if (await hashPass(oldp, u.salt) !== u.passHash) return toast('Mot de passe actuel incorrect','','bad');
-    if (newp.length<8 || !/\d/.test(newp)) return toast('Nouveau mot de passe trop faible','8 caractères min. et 1 chiffre.','bad');
-    u.salt = uid(); u.passHash = await hashPass(newp, u.salt); persist();
-    $('#pw-old').value=''; $('#pw-new').value='';
-    toast('Mot de passe modifié ✅','','good');
+    try {
+      await api('password', { method:'PUT', body:{ oldPass: $('#pw-old').value, newPass: $('#pw-new').value } });
+      $('#pw-old').value=''; $('#pw-new').value='';
+      toast('Mot de passe modifié ✅','','good');
+    } catch(e){ toast('Impossible', e.message, 'bad'); }
   });
 }
 
@@ -1149,31 +1069,34 @@ function renderProfil(view){
 $('#btn-login').addEventListener('click', doLogin);
 $('#li-pass').addEventListener('keydown', e=>{ if (e.key==='Enter') doLogin(); });
 async function doLogin(){
-  const numero = $('#li-numero').value.replace(/\D/g,'');
-  const pass = $('#li-pass').value;
-  const u = users.find(x=>x.numero===numero);
-  if (!u || await hashPass(pass, u.salt) !== u.passHash)
-    return toast('Connexion refusée','Numéro de compte ou mot de passe incorrect.','bad');
-  session = { userId: u.id, ts: Date.now() }; persist();
-  currentView = 'dash'; renderApp();
-  toast('Bienvenue '+u.prenom+' 👋','Connexion réussie.','good');
+  try {
+    const r = await api('login', { body: { numero: $('#li-numero').value, pass: $('#li-pass').value } });
+    token = r.token; localStorage.setItem('ka_token', token);
+    currentView = 'dash';
+    await loadState(); renderApp();
+    toast('Bienvenue '+r.me.prenom+' 👋','Connexion réussie.','good');
+  } catch(e){ toast('Connexion refusée', e.message, 'bad'); }
 }
 
-$('#btn-logout').addEventListener('click', () => {
-  session = null; persist();
-  currentView='dash';
-  $('#li-numero').value=''; $('#li-pass').value='';
-  show('#screen-auth');
+$('#btn-logout').addEventListener('click', async () => {
+  try { await api('logout', {method:'POST'}); } catch(e){}
+  localLogout();
   toast('À bientôt 👋','Tu as été déconnecté.','');
 });
 
 /* redimensionnement : redessiner le graphique */
-window.addEventListener('resize', () => { const u = me(); if (u && u.role==='client' && currentView==='dash') drawChart(u); });
+window.addEventListener('resize', () => {
+  const u = state.me;
+  if (u && u.role!=='admin' && currentView==='dash') drawChart(u);
+});
 
 /* ---------- démarrage ---------- */
 (async function init(){
-  await seed();
-  if (me()) { renderApp(); } else { show('#screen-auth'); }
+  if (token){
+    try { await loadState(); renderApp(); return; }
+    catch(e){ localLogout(); }
+  }
+  show('#screen-auth');
 })();
 </script>
 </body>
