@@ -42,29 +42,6 @@ const newSel = () => crypto.randomBytes(12).toString('hex');
 const round2 = n => Math.round(n * 100) / 100;
 const tsOf = d => (d instanceof Date ? d.getTime() : new Date(d).getTime());
 
-const RIB_BANQUE = '30012', RIB_GUICHET = '00001';
-function cleRib(banque, guichet, compte) {
-  return String(97n - ((89n * BigInt(banque) + 15n * BigInt(guichet) + 3n * BigInt(compte)) % 97n)).padStart(2, '0');
-}
-function ibanFrom(banque, guichet, compte, cle) {
-  const bban = banque + guichet + compte + cle;
-  const key = String(98n - (BigInt(bban + '152700') % 97n)).padStart(2, '0');
-  return 'FR' + key + bban;
-}
-const ribOf = numero => {
-  const compte = '0' + numero;
-  const cle = cleRib(RIB_BANQUE, RIB_GUICHET, compte);
-  return { banque: RIB_BANQUE, guichet: RIB_GUICHET, compte, cle, iban: ibanFrom(RIB_BANQUE, RIB_GUICHET, compte, cle) };
-};
-function parseRib(raw) {
-  let s = String(raw || '').replace(/[\s.-]/g, '').toUpperCase();
-  if (s.startsWith('FR')) s = s.slice(4);
-  if (!/^\d{23}$/.test(s)) return { error: 'format' };
-  const banque = s.slice(0, 5), guichet = s.slice(5, 10), compte = s.slice(10, 21), cle = s.slice(21, 23);
-  if (cleRib(banque, guichet, compte) !== cle) return { error: 'cle' };
-  return { numero: compte.replace(/^0/, '') };
-}
-
 const compteRow = r => ({
   id: r.id, prenom: r.prenom, nom: r.nom, numero: r.numero, role: r.role,
   solde: parseFloat(r.solde), statut: r.statut === 'bloque' ? 'bloqué' : 'actif',
@@ -142,31 +119,37 @@ app.post('/api/logout', auth, async (req, res, next) => {
 app.get('/api/state', auth, async (req, res, next) => {
   try {
     const me = compteRow(req.user);
+    const mapStatut = s => s === 'en_attente' ? 'en_attente' : (s === 'acceptee' ? 'acceptée' : 'refusée');
     if (req.user.role === 'admin') {
       const [cl] = await pool.query("SELECT * FROM comptes WHERE role='client' ORDER BY cree_le DESC");
       const [ops] = await pool.query(
         `SELECT o.*, c.prenom, c.nom FROM operations o JOIN comptes c ON c.id=o.compte_id
          ORDER BY o.cree_le DESC, o.id DESC LIMIT 500`);
-      return res.json({ me, clients: cl.map(compteRow), ledger: ops.map(opRow), requests: [] });
+      const [reqs] = await pool.query(
+        `SELECT d.*, f.prenom AS from_prenom, f.nom AS from_nom, f.solde AS from_solde
+         FROM demandes_virement d JOIN comptes f ON f.id = d.demandeur_id
+         ORDER BY d.cree_le DESC LIMIT 100`);
+      return res.json({
+        me, clients: cl.map(compteRow), ledger: ops.map(opRow),
+        requests: reqs.map(r => ({
+          id: r.id, fromId: r.demandeur_id,
+          fromName: r.from_prenom + ' ' + r.from_nom, fromSolde: parseFloat(r.from_solde),
+          rib: r.rib, montant: parseFloat(r.montant), note: r.motif,
+          statut: mapStatut(r.statut), ts: tsOf(r.cree_le),
+        })),
+      });
     }
     const [ops] = await pool.query(
       'SELECT o.*, NULL AS prenom, NULL AS nom FROM operations o WHERE compte_id=? ORDER BY cree_le DESC, id DESC', [req.user.id]);
     const [reqs] = await pool.query(
-      `SELECT d.*, f.prenom AS from_prenom, f.nom AS from_nom, t.prenom AS to_prenom, t.nom AS to_nom
-       FROM demandes_virement d
-       JOIN comptes f ON f.id = d.demandeur_id
-       JOIN comptes t ON t.id = d.payeur_id
-       WHERE d.demandeur_id=? OR d.payeur_id=?
-       ORDER BY d.cree_le DESC LIMIT 100`, [req.user.id, req.user.id]);
+      'SELECT * FROM demandes_virement WHERE demandeur_id=? ORDER BY cree_le DESC LIMIT 100', [req.user.id]);
     res.json({
       me,
       ledger: ops.map(opRow),
       requests: reqs.map(r => ({
-        id: r.id, fromId: r.demandeur_id, toId: r.payeur_id,
-        fromName: r.from_prenom + ' ' + r.from_nom, toName: r.to_prenom + ' ' + r.to_nom,
+        id: r.id, fromId: r.demandeur_id, rib: r.rib,
         montant: parseFloat(r.montant), note: r.motif,
-        statut: r.statut === 'en_attente' ? 'en_attente' : (r.statut === 'acceptee' ? 'acceptée' : 'refusée'),
-        ts: tsOf(r.cree_le),
+        statut: mapStatut(r.statut), ts: tsOf(r.cree_le),
       })),
     });
   } catch (e) { next(e); }
@@ -195,51 +178,43 @@ app.put('/api/password', auth, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-/* ---------- demandes de virement (client) ---------- */
+/* ---------- demandes de virement ----------
+   Le client saisit un RIB libre (AUCUNE vérification) : la demande part
+   chez l'administrateur avec le statut 'en_attente'. À la validation,
+   le compte du client est débité. */
 app.post('/api/demandes', auth, async (req, res, next) => {
   try {
+    if (req.user.role !== 'client') return fail(res, 403, 'Réservé aux clients');
     if (req.user.statut === 'bloque') return fail(res, 403, 'Compte suspendu');
-    const r = parseRib(req.body.rib);
-    if (r.error === 'format') return fail(res, 400, 'RIB invalide : IBAN FR complet ou 23 chiffres attendus');
-    if (r.error === 'cle') return fail(res, 400, 'Clé RIB incorrecte : vérifie le RIB saisi');
+    const rib = String(req.body.rib || '').trim().slice(0, 40);
+    if (rib.length < 5) return fail(res, 400, 'RIB manquant');
     const montant = round2(parseFloat(req.body.montant));
     if (!(montant > 0)) return fail(res, 400, 'Montant invalide');
-    const [rows] = await pool.query("SELECT * FROM comptes WHERE numero=? AND role='client'", [r.numero]);
-    const payeur = rows[0];
-    if (!payeur) return fail(res, 404, 'Aucun compte ne correspond à ce RIB');
-    if (payeur.id === req.user.id) return fail(res, 400, 'Impossible de se faire une demande à soi-même');
-    if (payeur.statut === 'bloque') return fail(res, 403, 'Ce compte est suspendu');
     await pool.query(
-      'INSERT INTO demandes_virement (demandeur_id, payeur_id, montant, motif) VALUES (?,?,?,?)',
-      [req.user.id, payeur.id, montant, String(req.body.motif || '').trim() || null]);
-    res.json({ ok: true, payeurNom: payeur.prenom + ' ' + payeur.nom });
+      'INSERT INTO demandes_virement (demandeur_id, rib, montant, motif) VALUES (?,?,?,?)',
+      [req.user.id, rib, montant, String(req.body.motif || '').trim() || null]);
+    res.json({ ok: true });
   } catch (e) { next(e); }
 });
 
-app.post('/api/demandes/:id/accept', auth, async (req, res, next) => {
+app.post('/api/demandes/:id/accept', auth, adminOnly, async (req, res, next) => {
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
     const [dr] = await conn.query(
-      "SELECT * FROM demandes_virement WHERE id=? AND payeur_id=? AND statut='en_attente' FOR UPDATE",
-      [req.params.id, req.user.id]);
+      "SELECT * FROM demandes_virement WHERE id=? AND statut='en_attente' FOR UPDATE", [req.params.id]);
     const d = dr[0];
     if (!d) { await conn.rollback(); return fail(res, 404, 'Demande introuvable ou déjà traitée'); }
-    const [cr] = await conn.query('SELECT * FROM comptes WHERE id IN (?,?) FOR UPDATE', [d.payeur_id, d.demandeur_id]);
-    const payeur = cr.find(x => x.id === d.payeur_id), benef = cr.find(x => x.id === d.demandeur_id);
+    const [cr] = await conn.query('SELECT * FROM comptes WHERE id=? FOR UPDATE', [d.demandeur_id]);
+    const client = cr[0];
     const montant = parseFloat(d.montant);
-    if (!payeur || !benef) { await conn.rollback(); return fail(res, 404, 'Compte introuvable'); }
-    if (payeur.statut === 'bloque' || benef.statut === 'bloque') { await conn.rollback(); return fail(res, 403, 'Compte suspendu'); }
-    if (parseFloat(payeur.solde) < montant) { await conn.rollback(); return fail(res, 400, 'Solde insuffisant'); }
-    const sp = round2(parseFloat(payeur.solde) - montant);
-    const sb = round2(parseFloat(benef.solde) + montant);
-    await conn.query('UPDATE comptes SET solde=? WHERE id=?', [sp, payeur.id]);
-    await conn.query('UPDATE comptes SET solde=? WHERE id=?', [sb, benef.id]);
+    if (!client) { await conn.rollback(); return fail(res, 404, 'Compte introuvable'); }
+    if (parseFloat(client.solde) < montant) { await conn.rollback(); return fail(res, 400, 'Solde du client insuffisant'); }
+    const ns = round2(parseFloat(client.solde) - montant);
+    await conn.query('UPDATE comptes SET solde=? WHERE id=?', [ns, client.id]);
     await conn.query(
-      `INSERT INTO operations (compte_id,type,libelle,montant,solde_apres,meta,contrepartie_id) VALUES
-       (?,?,?,?,?,?,?), (?,?,?,?,?,?,?)`,
-      [payeur.id, 'virement_out', 'Virement vers ' + benef.prenom + ' ' + benef.nom, -montant, sp, d.motif, benef.id,
-       benef.id, 'virement_in', 'Virement de ' + payeur.prenom + ' ' + payeur.nom, montant, sb, d.motif, payeur.id]);
+      'INSERT INTO operations (compte_id,type,libelle,montant,solde_apres,meta) VALUES (?,?,?,?,?,?)',
+      [client.id, 'virement_out', 'Virement vers ' + d.rib, -montant, ns, d.motif]);
     await conn.query("UPDATE demandes_virement SET statut='acceptee', traite_le=NOW() WHERE id=?", [d.id]);
     await conn.commit();
     res.json({ ok: true });
@@ -247,11 +222,11 @@ app.post('/api/demandes/:id/accept', auth, async (req, res, next) => {
   finally { conn.release(); }
 });
 
-app.post('/api/demandes/:id/refuse', auth, async (req, res, next) => {
+app.post('/api/demandes/:id/refuse', auth, adminOnly, async (req, res, next) => {
   try {
     const [r] = await pool.query(
-      "UPDATE demandes_virement SET statut='refusee', traite_le=NOW() WHERE id=? AND payeur_id=? AND statut='en_attente'",
-      [req.params.id, req.user.id]);
+      "UPDATE demandes_virement SET statut='refusee', traite_le=NOW() WHERE id=? AND statut='en_attente'",
+      [req.params.id]);
     if (!r.affectedRows) return fail(res, 404, 'Demande introuvable ou déjà traitée');
     res.json({ ok: true });
   } catch (e) { next(e); }
@@ -282,7 +257,7 @@ app.post('/api/clients', auth, adminOnly, async (req, res, next) => {
         [ins.insertId, 'depot', "Dépôt d'ouverture", solde, solde]);
       await pool.query('UPDATE comptes SET solde=? WHERE id=?', [solde, ins.insertId]);
     }
-    res.json({ ok: true, numero, iban: ribOf(numero).iban });
+    res.json({ ok: true, numero });
   } catch (e) { next(e); }
 });
 

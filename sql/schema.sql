@@ -65,31 +65,29 @@ CREATE TABLE `operations` (
 
 -- ---------------------------------------------------------------------
 -- Table des demandes de virement
--- Le demandeur demande un montant au payeur ; le payeur accepte
--- (le virement est alors exécuté) ou refuse.
+-- Le client saisit un RIB LIBRE (texte, aucune vérification) : la demande
+-- part chez l'administrateur (statut en_attente). À la validation, le
+-- compte du client est débité ; sinon la demande est refusée.
 -- ---------------------------------------------------------------------
 DROP TABLE IF EXISTS `demandes_virement`;
 CREATE TABLE `demandes_virement` (
   `id`           BIGINT UNSIGNED  NOT NULL AUTO_INCREMENT,
-  `demandeur_id` INT UNSIGNED     NOT NULL COMMENT 'Compte qui demande l''argent',
-  `payeur_id`    INT UNSIGNED     NOT NULL COMMENT 'Compte à qui on demande',
+  `demandeur_id` INT UNSIGNED     NOT NULL COMMENT 'Compte client qui fait la demande',
+  `rib`          VARCHAR(40)      NOT NULL COMMENT 'RIB/IBAN saisi librement par le client (non vérifié)',
   `montant`      DECIMAL(12,2)    NOT NULL,
   `motif`        VARCHAR(160)     NULL,
   `statut`       ENUM('en_attente','acceptee','refusee','annulee') NOT NULL DEFAULT 'en_attente',
   `cree_le`      DATETIME         NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `traite_le`    DATETIME         NULL COMMENT 'Date d''acceptation/refus',
   PRIMARY KEY (`id`),
-  KEY `idx_payeur_statut` (`payeur_id`, `statut`),
+  KEY `idx_statut` (`statut`),
   KEY `idx_demandeur` (`demandeur_id`),
   CONSTRAINT `fk_dem_demandeur`
     FOREIGN KEY (`demandeur_id`) REFERENCES `comptes` (`id`)
     ON DELETE CASCADE,
-  CONSTRAINT `fk_dem_payeur`
-    FOREIGN KEY (`payeur_id`) REFERENCES `comptes` (`id`)
-    ON DELETE CASCADE,
   CONSTRAINT `chk_montant_positif` CHECK (`montant` > 0)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-  COMMENT='Demandes de virement entre comptes';
+  COMMENT='Demandes de virement (traitées par l''administrateur)';
 
 -- ---------------------------------------------------------------------
 -- Table des sessions (authentification côté serveur)
@@ -123,30 +121,6 @@ INSERT INTO `comptes` (`numero`,`prenom`,`nom`,`role`,`pass_hash`,`sel`,`solde`,
 
 SET FOREIGN_KEY_CHECKS = 1;
 
--- ---------------------------------------------------------------------
--- RIB complet
--- Le RIB de chaque compte est DÉRIVÉ du numéro à 10 chiffres :
---   code banque  : 30012          (constante Kyz Account)
---   code guichet : 00001          (constante)
---   n° de compte : '0' + numero   (11 chiffres)
---   clé RIB      : 97 − ((89×banque + 15×guichet + 3×compte) mod 97)
---   IBAN         : 'FR' + clé_iban + banque + guichet + compte + clé_rib
---   BIC          : KYZAFRPP
--- La vue ci-dessous expose le RIB complet pour l'API / les exports.
--- ---------------------------------------------------------------------
-DROP VIEW IF EXISTS `v_rib`;
-CREATE VIEW `v_rib` AS
-SELECT
-  c.`id`,
-  c.`numero`,
-  c.`prenom`,
-  c.`nom`,
-  '30012'                                   AS `code_banque`,
-  '00001'                                   AS `code_guichet`,
-  CONCAT('0', c.`numero`)                   AS `numero_compte`,
-  LPAD(97 - MOD(89*30012 + 15*1 + 3*CAST(CONCAT('0', c.`numero`) AS UNSIGNED), 97), 2, '0') AS `cle_rib`
-FROM `comptes` c
-WHERE c.`role` = 'client';
 
 -- =====================================================================
 --  Requêtes utiles (référence pour l'API)
@@ -167,10 +141,10 @@ WHERE c.`role` = 'client';
 --       (:dst,'virement_in', :lib, :m,(SELECT solde FROM comptes WHERE id=:dst),:src);
 --   COMMIT;
 --
--- Demandes en attente pour un payeur :
---   SELECT d.*, c.prenom, c.nom FROM demandes_virement d
+-- Demandes en attente (vue admin) :
+--   SELECT d.*, c.prenom, c.nom, c.solde FROM demandes_virement d
 --   JOIN comptes c ON c.id = d.demandeur_id
---   WHERE d.payeur_id = ? AND d.statut = 'en_attente';
+--   WHERE d.statut = 'en_attente' ORDER BY d.cree_le;
 --
 -- Dépôt antidaté par l'admin (date choisie) :
 --   INSERT INTO operations (compte_id,type,libelle,montant,solde_apres,cree_le)

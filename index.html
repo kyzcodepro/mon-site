@@ -329,24 +329,6 @@ const fmtDateTime = ts => new Date(ts).toLocaleDateString('fr-FR',{day:'2-digit'
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmtNumero = n => String(n).replace(/(\d{2})(?=\d)/g,'$1 ').trim();
 
-/* ---------- RIB (affichage + pré-validation côté client) ---------- */
-const RIB_BANQUE = '30012', RIB_GUICHET = '00001';
-function cleRib(banque, guichet, compte){
-  return String(97n - ((89n*BigInt(banque) + 15n*BigInt(guichet) + 3n*BigInt(compte)) % 97n)).padStart(2,'0');
-}
-function ibanFrom(banque, guichet, compte, cle){
-  const bban = banque + guichet + compte + cle;
-  const key = String(98n - (BigInt(bban + '152700') % 97n)).padStart(2,'0');
-  return 'FR' + key + bban;
-}
-function ribOf(u){
-  const compte = '0' + u.numero;
-  const cle = cleRib(RIB_BANQUE, RIB_GUICHET, compte);
-  const iban = ibanFrom(RIB_BANQUE, RIB_GUICHET, compte, cle);
-  return { banque: RIB_BANQUE, guichet: RIB_GUICHET, compte, cle, iban,
-           ibanFmt: iban.replace(/(.{4})/g,'$1 ').trim() };
-}
-
 /* ---------- accès API ---------- */
 let token = localStorage.getItem('ka_token') || null;
 const state = { me:null, clients:[], ledger:[], requests:[] };
@@ -494,8 +476,7 @@ function renderClientDash(view){
       <div class="bh-amount" id="bal-num">${eur(0)}</div>
       <div class="bh-iban">N° de compte&nbsp;: ${fmtNumero(u.numero)}</div>
       <div class="bh-actions">
-        <button class="btn small" id="act-demande" ${u.statut==='bloqué'?'disabled':''}>📥 Demande de virement</button>
-        <button class="btn small neutral" id="act-rib">📄 Mon RIB</button>
+        <button class="btn small" id="act-demande" ${u.statut==='bloqué'?'disabled':''}>📤 Demande de virement</button>
       </div>
     </div>
 
@@ -530,35 +511,40 @@ function renderClientDash(view){
   animateNum($('#bal-num'), u.solde, v=>eur(v));
   $('#see-all').addEventListener('click', ()=>{ currentView='historique'; renderApp(); });
   $('#act-demande') && $('#act-demande').addEventListener('click', modalDemande);
-  $('#act-rib') && $('#act-rib').addEventListener('click', modalRib);
-  bindRequestActions();
   drawChart(u);
 }
 
 /* ---------- demandes de virement ---------- */
+const REQ_STATUTS = { en_attente:'<span class="chip warn">⏳ Demande en cours</span>', acceptée:'<span class="chip ok">✔ Acceptée</span>', refusée:'<span class="chip ko">✖ Refusée</span>' };
+
 function renderRequestsCard(u){
-  const recues = state.requests.filter(r=>r.toId===u.id && r.statut==='en_attente');
-  const envoyees = state.requests.filter(r=>r.fromId===u.id).slice(0,4);
-  if (!recues.length && !envoyees.length) return '';
-  const STATUTS = { en_attente:'<span class="chip warn">⏳ En attente</span>', acceptée:'<span class="chip ok">✔ Acceptée</span>', refusée:'<span class="chip ko">✖ Refusée</span>' };
-  let html = '<div class="card mt fade-in"><div class="card-head"><h3>Demandes de virement</h3></div>';
-  if (recues.length){
-    html += '<div class="muted" style="margin-bottom:10px">On te demande :</div>';
-    html += recues.map(r=>`<div class="cell-flex" style="justify-content:space-between;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.05)">
-        <div class="cell-flex"><div class="tx-ico">📥</div><div class="lbl"><b>${esc(r.fromName)} demande ${eur(r.montant)}</b><span>${r.note?esc(r.note)+' · ':''}${fmtDateTime(r.ts)}</span></div></div>
-        <div style="white-space:nowrap">
-          <button class="btn small success" data-req-acc="${r.id}">Payer</button>
-          <button class="btn small danger" data-req-ref="${r.id}">Refuser</button>
-        </div>
-      </div>`).join('');
-  }
-  if (envoyees.length){
-    html += '<div class="muted" style="margin:14px 0 10px">Tes demandes :</div>';
-    html += envoyees.map(r=>`<div class="cell-flex" style="justify-content:space-between;padding:8px 0">
-        <div class="lbl"><b style="font-size:.92rem">${eur(r.montant)} à ${esc(r.toName)}</b> <span class="muted">· ${fmtDateTime(r.ts)}</span></div>
-        <div>${STATUTS[r.statut]||''}</div>
-      </div>`).join('');
-  }
+  const miennes = state.requests.slice(0,6);
+  if (!miennes.length) return '';
+  let html = '<div class="card mt fade-in"><div class="card-head"><h3>Mes demandes de virement</h3></div>';
+  html += miennes.map(r=>`<div class="cell-flex" style="justify-content:space-between;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.05)">
+      <div class="cell-flex"><div class="tx-ico">📤</div><div class="lbl"><b>${eur(r.montant)}</b><span class="mono">${esc(r.rib)}</span>${r.note?`<span>${esc(r.note)}</span>`:''}<span>${fmtDateTime(r.ts)}</span></div></div>
+      <div>${REQ_STATUTS[r.statut]||''}</div>
+    </div>`).join('');
+  return html + '</div>';
+}
+
+/* côté admin : demandes à traiter */
+function renderAdminRequestsCard(){
+  const attente = state.requests.filter(r=>r.statut==='en_attente');
+  if (!attente.length) return '';
+  let html = '<div class="card mt fade-in"><div class="card-head"><h3>📥 Demandes de virement à traiter</h3><span class="hint">'+attente.length+' en cours</span></div>';
+  html += attente.map(r=>`<div class="cell-flex" style="justify-content:space-between;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.05);flex-wrap:wrap;gap:8px">
+      <div class="cell-flex"><div class="tx-ico">📤</div><div class="lbl">
+        <b>${esc(r.fromName)} demande ${eur(r.montant)}</b>
+        <span class="mono">RIB : ${esc(r.rib)}</span>
+        ${r.note?`<span>Motif : ${esc(r.note)}</span>`:''}
+        <span>${fmtDateTime(r.ts)} · solde du client : ${eur(r.fromSolde)}</span>
+      </div></div>
+      <div style="white-space:nowrap">
+        <button class="btn small success" data-req-acc="${r.id}">Valider</button>
+        <button class="btn small danger" data-req-ref="${r.id}">Refuser</button>
+      </div>
+    </div>`).join('');
   return html + '</div>';
 }
 
@@ -567,7 +553,7 @@ function bindRequestActions(){
     try {
       await api('demandes/'+b.dataset.reqAcc+'/accept', {method:'POST'});
       await refresh();
-      toast('Demande payée ✅','Le virement a été effectué.','good');
+      toast('Demande validée ✅','Le compte du client a été débité.','good');
     } catch(e){ toast('Impossible', e.message, 'bad'); }
   }));
   $$('[data-req-ref]').forEach(b=>b.addEventListener('click', async ()=>{
@@ -719,55 +705,29 @@ function drawChart(u){
 }
 
 /* ---------- modales client ---------- */
-function modalRib(){
-  const u = state.me;
-  const r = ribOf(u);
-  openModal(`
-    <h3>📄 Mon RIB</h3>
-    <div class="m-sub">Relevé d'identité bancaire — à transmettre pour recevoir une demande de virement.</div>
-    <div class="card" style="padding:18px">
-      <div class="row-2" style="margin-bottom:10px">
-        <div><div class="t-label" style="font-size:.7rem">Code banque</div><div class="mono" style="font-weight:700">${r.banque}</div></div>
-        <div><div class="t-label" style="font-size:.7rem">Code guichet</div><div class="mono" style="font-weight:700">${r.guichet}</div></div>
-      </div>
-      <div class="row-2" style="margin-bottom:10px">
-        <div><div class="t-label" style="font-size:.7rem">N° de compte</div><div class="mono" style="font-weight:700">${r.compte}</div></div>
-        <div><div class="t-label" style="font-size:.7rem">Clé RIB</div><div class="mono" style="font-weight:700">${r.cle}</div></div>
-      </div>
-      <div class="t-label" style="font-size:.7rem">IBAN</div>
-      <div class="mono" id="rib-iban" style="font-weight:700;letter-spacing:1px;font-size:.95rem">${r.ibanFmt}</div>
-      <div class="muted" style="margin-top:8px">Titulaire : ${esc(u.prenom+' '+u.nom)} · BIC : KYZAFRPP</div>
-    </div>
-    <div class="m-actions">
-      <button class="btn ghost" onclick="closeModal()">Fermer</button>
-      <button class="btn" id="rib-copy">📋 Copier l'IBAN</button>
-    </div>
-  `);
-  $('#rib-copy').addEventListener('click', async () => {
-    try { await navigator.clipboard.writeText(r.iban); toast('IBAN copié ✅','','good'); }
-    catch(e){ toast('Copie impossible','Sélectionne et copie manuellement.','bad'); }
-  });
-}
-
 function modalDemande(){
+  const u = state.me;
   openModal(`
-    <h3>📥 Demande de virement</h3>
-    <div class="m-sub">Demande de l'argent à un autre compte : saisis son RIB complet, il devra accepter avant que le virement parte.</div>
-    <div class="field"><label>RIB complet ou IBAN du payeur</label><input id="d-dest" type="text" maxlength="34" placeholder="FR76 3001 2000 0100 … ou 23 chiffres" /><div class="pw-note">Formats acceptés : IBAN (FR76…) ou RIB banque+guichet+compte+clé (23 chiffres).</div></div>
+    <h3>📤 Demande de virement</h3>
+    <div class="m-sub">Saisis le RIB du compte à créditer. Ta demande sera examinée par nos équipes avant exécution.</div>
+    <div class="field"><label>RIB / IBAN du bénéficiaire</label><input id="d-dest" type="text" maxlength="40" placeholder="FR76 …" /></div>
     <div class="field"><label>Montant (€)</label><input id="d-mnt" type="number" min="0.01" step="0.01" placeholder="50.00" /></div>
-    <div class="field"><label>Motif (optionnel)</label><input id="d-note" type="text" placeholder="Ma part du cadeau…" /></div>
+    <div class="field"><label>Motif (optionnel)</label><input id="d-note" type="text" placeholder="Loyer, épargne…" /></div>
+    <div class="muted">Solde disponible : <b>${eur(u.solde)}</b></div>
     <div class="m-actions">
       <button class="btn ghost" onclick="closeModal()">Annuler</button>
       <button class="btn" id="d-go">Envoyer la demande</button>
     </div>
   `);
   $('#d-go').addEventListener('click', async () => {
+    const rib = $('#d-dest').value.trim();
     const mnt = Math.round(parseFloat($('#d-mnt').value)*100)/100;
+    if (rib.length < 5) return toast('RIB manquant','Saisis le RIB du bénéficiaire.','bad');
     if (!(mnt>0)) return toast('Montant invalide','Saisis un montant supérieur à 0.','bad');
     try {
-      const r = await api('demandes', { body: { rib: $('#d-dest').value, montant: mnt, motif: $('#d-note').value.trim() } });
+      await api('demandes', { body: { rib, montant: mnt, motif: $('#d-note').value.trim() } });
       closeModal(); await refresh();
-      toast('Demande envoyée ⏳', eur(mnt)+' demandés à '+(r.payeurNom||''),'good');
+      toast('Demande envoyée ⏳','Ta demande de '+eur(mnt)+' est en cours de traitement.','good');
     } catch(e){ toast('Impossible', e.message, 'bad'); }
   });
 }
@@ -794,6 +754,7 @@ function renderAdminDash(view){
       <div class="card tile"><div class="t-label">💶 Encours total</div><div class="t-value" id="st-total">0</div><div class="t-delta">somme des soldes clients</div></div>
       <div class="card tile"><div class="t-label">🧾 Opérations (24 h)</div><div class="t-value" id="st-ops">0</div><div class="t-delta">${state.ledger.length} récentes</div></div>
     </div>
+    ${renderAdminRequestsCard()}
     <div class="card mt fade-in">
       <div class="card-head"><h3>Dernières opérations (tous clients)</h3><button class="btn small ghost" id="see-ops">Tout voir →</button></div>
       ${renderAdminTxTable(state.ledger.slice(0,6))}
@@ -805,6 +766,7 @@ function renderAdminDash(view){
   animateNum($('#st-ops'), today, v=>Math.round(v));
   $('#new-client').addEventListener('click', modalNewClient);
   $('#see-ops').addEventListener('click', ()=>{ currentView='ops'; renderApp(); });
+  bindRequestActions();
 }
 
 function renderAdminTxTable(list){
@@ -937,8 +899,6 @@ function modalNewClient(){
         <div class="card" style="padding:18px;text-align:center">
           <div class="t-label" style="font-size:.72rem;justify-content:center">N° de compte</div>
           <div class="mono" style="font-size:1.5rem;font-weight:800;letter-spacing:2px;margin-top:6px">${fmtNumero(r.numero)}</div>
-          <div class="t-label" style="font-size:.72rem;justify-content:center;margin-top:10px">IBAN</div>
-          <div class="mono" style="font-size:.88rem;font-weight:700;margin-top:4px">${r.iban.replace(/(.{4})/g,'$1 ').trim()}</div>
           <div class="muted" style="margin-top:8px">Mot de passe provisoire : <b>${esc(pass)}</b></div>
         </div>
         <div class="m-actions"><button class="btn" onclick="closeModal()">C'est noté</button></div>
@@ -989,7 +949,6 @@ async function modalClientDetail(c){
       <div class="card" style="padding:16px"><div class="t-label" style="font-size:.72rem">Solde</div><div style="font-size:1.3rem;font-weight:800">${eur(c.solde)}</div></div>
       <div class="card" style="padding:16px"><div class="t-label" style="font-size:.72rem">Statut</div><div style="margin-top:6px">${c.statut==='actif'?'<span class="chip ok">● Actif</span>':'<span class="chip ko">● Bloqué</span>'}</div></div>
     </div>
-    <div class="muted mt mono" style="font-size:.78rem">IBAN : ${ribOf(c).ibanFmt}</div>
     <div class="mt" style="max-height:240px;overflow:auto">${renderTxTable(lg.slice(0,10))}</div>
     <div class="m-actions"><button class="btn ghost" onclick="closeModal()">Fermer</button></div>
   `);
@@ -1032,7 +991,6 @@ function renderProfil(view){
         <div class="field"><label>Prénom</label><input id="pf-prenom" value="${esc(u.prenom)}" /></div>
         <div class="field"><label>Nom</label><input id="pf-nom" value="${esc(u.nom)}" /></div>
         <div class="field"><label>N° de compte</label><input class="mono" value="${fmtNumero(u.numero)}" disabled style="opacity:.6;letter-spacing:1px" /></div>
-        ${u.role==='client' ? `<div class="field"><label>IBAN</label><input class="mono" value="${ribOf(u).ibanFmt}" disabled style="opacity:.6;font-size:.82rem" /></div>` : ''}
         <button class="btn" id="pf-save">Enregistrer</button>
       </div>
       <div class="card">
