@@ -347,6 +347,8 @@ async function api(path, opts){
   }
   let data = {};
   try { data = await r.json(); } catch(e){}
+  if (r.status === 501 || r.status === 405 || r.status === 404 && !data.error)
+    throw new Error('Le site est servi en statique : lance l\'API (cd server && npm start) et ouvre le site sur son port.');
   if (r.status === 401 && path !== 'login'){ localLogout(); throw new Error(data.error || 'Session expirée'); }
   if (!r.ok) throw new Error(data.error || ('Erreur ' + r.status));
   return data;
